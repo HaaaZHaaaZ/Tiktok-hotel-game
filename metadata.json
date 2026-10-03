@@ -1,0 +1,6 @@
+{
+  "name": "TikTok Hotel — Juego Interactivo TikTok LIVE",
+  "description": "Hotel virtual interactivo 2D en tiempo real para transmisiones de TikTok LIVE con simulación de residentes, regalos, eventos dinámicos y penthouse VIP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
