@@ -90,11 +90,18 @@ export const RoomRenderer: React.FC<RoomRendererProps> = ({
         </div>
       )}
 
-      {/* Speech Bubble Layer: Centered & Never Cut Off */}
+      {/* Globo de dialogo, sobre la cabeza del residente.
+          Antes se renderizaba en top-1, encima de la pared de la habitacion, y
+          quedabahidden tras el marco: no se leia nada. Ahora se centra en el
+          espacio del personaje y se dibuja DESPUES (z-40) para que nada lo tape. */}
       {resident?.speechBubble && (
-        <div className="absolute top-1 left-1 right-1 z-40 flex justify-center pointer-events-none">
-          <div className="bg-white text-slate-950 px-2 py-0.5 rounded-md border border-slate-900 shadow-xl text-[8px] font-black max-w-[100px] text-center leading-tight break-words whitespace-normal animate-in zoom-in-95 duration-200">
-            <span className="text-amber-500 mr-0.5">💬</span>{resident.speechBubble.text}
+        <div className="absolute inset-x-0 top-8 z-40 flex justify-center pointer-events-none px-1">
+          <div className="relative bg-white text-slate-950 px-1.5 py-1 rounded-md border-2 border-slate-900 shadow-xl text-[8px] font-black max-w-[110px] text-center leading-tight break-words whitespace-normal animate-in zoom-in-95 duration-200">
+            <span className="text-amber-500 mr-0.5">💬</span>
+            {resident.speechBubble.text}
+            {/* Rabito apuntando al personaje */}
+            <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[4px] border-t-slate-900" />
+            <div className="absolute left-1/2 -bottom-0.5 -translate-x-1/2 w-0 h-0 border-l-[2px] border-l-transparent border-r-[2px] border-r-transparent border-t-[3px] border-t-white" />
           </div>
         </div>
       )}

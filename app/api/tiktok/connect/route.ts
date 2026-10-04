@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { liveBridge } from '../../../../services/tiktok/liveBridge';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * Conecta (o desconecta) el live de un streamer.
+ *
+ * Antes esto solo scrapeaba el HTML de TikTok para ver si estaba en vivo y
+ * devolvia exito SIEMPRE, aunque no ocurriese nada: los eventos solo llegaban
+ * si alguien hacia POST al webhook. Ahora abre un WebSocket real al live y los
+ * eventos fluyen solos.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { username } = await req.json();
+    const body = await req.json();
+    const { username, action } = body || {};
+
+    if (action === 'disconnect') {
+      liveBridge.disconnect();
+      return NextResponse.json({
+        success: true,
+        status: 'disconnected',
+        message: 'Conexion cerrada',
+      });
+    }
 
     if (!username || typeof username !== 'string') {
       return NextResponse.json(
@@ -11,89 +33,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cleanUsername = username.replace(/^@/, '').trim().toLowerCase();
+    const cleanUsername = username.replace(/^@/, '').trim();
 
-    // Validate TikTok username pattern (2-24 chars, letters, numbers, underscores, dots)
-    const isValidFormat = /^[a-z0-9_.-]{2,24}$/.test(cleanUsername);
-    if (!isValidFormat) {
+    if (!/^[A-Za-z0-9_.-]{2,24}$/.test(cleanUsername)) {
       return NextResponse.json(
         {
           success: false,
-          error: `El nombre "${cleanUsername}" no tiene un formato válido de TikTok (solo letras, números, puntos y guiones bajos, de 2 a 24 caracteres).`,
+          error: `El nombre "${cleanUsername}" no tiene un formato válido de TikTok (2-24 caracteres: letras, números, puntos o guiones bajos).`,
         },
         { status: 400 }
       );
     }
 
-    // Attempt to verify live room status on TikTok
-    let isLive = false;
-    let verifiedAccount = false;
-    let roomTitle = '';
-
-    try {
-      const response = await fetch(`https://www.tiktok.com/@${cleanUsername}/live`, {
-        method: 'GET',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-        },
-        next: { revalidate: 0 },
-      });
-
-      if (response.status === 404) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `El usuario @${cleanUsername} no fue encontrado en TikTok (Error 404). Verifica que esté bien escrito.`,
-          },
-          { status: 404 }
-        );
-      }
-
-      const html = await response.text();
-
-      // Check if page contains live room indicators or offline state
-      if (html.includes('"liveRoom"') || html.includes('"roomInfo"') || html.includes('room_id') || html.includes('"status":2')) {
-        // Streamer is actively live!
-        isLive = true;
-        verifiedAccount = true;
-      } else if (html.includes('LIVE has ended') || html.includes('no está en vivo') || html.includes('offline') || html.includes('"liveStatus":0')) {
-        // Account exists but is not currently transmitting live
-        verifiedAccount = true;
-        isLive = false;
-      } else if (html.includes('Couldn\'t find this account') || html.includes('No se pudo encontrar esta cuenta')) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `La cuenta @${cleanUsername} no existe en TikTok.`,
-          },
-          { status: 404 }
-        );
-      } else {
-        // TikTok returned bot protection or anti-scraping wall
-        // In this case, account format is valid, so we allow connection with TikFinity webhook notice
-        verifiedAccount = true;
-        isLive = true;
-      }
-    } catch {
-      // In case of network timeout to TikTok, allow graceful connection for webhook listening
-      verifiedAccount = true;
-      isLive = true;
-    }
+    await liveBridge.connect(cleanUsername);
+    const st = liveBridge.status();
 
     return NextResponse.json({
       success: true,
       status: 'connected',
       streamer: `@${cleanUsername}`,
-      isLive,
-      verifiedAccount,
-      roomId: `live_${cleanUsername}_${Date.now().toString(36)}`,
-      connectedAt: new Date().toISOString(),
-      message: isLive
-        ? `¡Conexión establecida con @${cleanUsername}! El receptor de eventos está activo y escuchando.`
-        : `Cuenta @${cleanUsername} detectada. Conéctate con TikFinity o inicia tu LIVE para que los comentarios entren automáticamente.`,
+      isLive: st.state === 'connected',
+      roomId: st.roomId,
+      connectionState: st.state,
+      lastError: st.lastError || undefined,
+      connectedAt: st.connectedAt ? new Date(st.connectedAt).toISOString() : null,
+      source: 'tiktok-live-connector',
+      message:
+        st.state === 'connected'
+          ? `Conectado al live de @${cleanUsername}. Los comentarios, regalos y likes entran solos.`
+          : st.state === 'connecting' || st.state === 'reconnecting'
+            ? `Conectando con @${cleanUsername}... Si no está en vivo, se reintentará automáticamente.`
+            : `No se pudo conectar con @${cleanUsername}${st.lastError ? `: ${st.lastError}` : ''}.`,
       webhookUrl: `/api/tiktok/webhook`,
     });
   } catch (error: any) {
@@ -102,4 +72,28 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export async function GET() {
+  const st = liveBridge.status();
+  return NextResponse.json({
+    success: true,
+    connection: {
+      state: st.state,
+      streamer: st.streamer,
+      roomId: st.roomId,
+      connectedAt: st.connectedAt,
+      uptimeMs: st.uptimeMs,
+      lastError: st.lastError,
+      counts: st.counts,
+      // Medidores de la tuberia servidor -> navegador. Si 'pollAgeSec' crece, el
+      // NAVEGADOR dejo de pedir eventos (no es TikTok). Consultar en caliente:
+      //   curl http://192.168.1.37:8095/api/tiktok/connect | jq .connection
+      polls: st.polls,
+      pollAgeSec: st.pollAgeSec,
+      bufferSize: st.bufferSize,
+      lastPollSince: st.lastPollSince,
+      serverTime: Date.now(),
+    },
+  });
 }

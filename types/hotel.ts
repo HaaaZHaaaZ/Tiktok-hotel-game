@@ -133,7 +133,7 @@ export interface GiftDefinition {
 }
 
 export interface CameraState {
-  targetType: 'GENERAL' | 'ELEVATOR' | 'ROOM' | 'RECEPTION' | 'PENTHOUSE';
+  targetType: 'GENERAL' | 'ELEVATOR' | 'ROOM' | 'RECEPTION' | 'PENTHOUSE' | 'TOUR';
   targetFloor: number;
   targetRoomNumber?: number;
   zoom: number; // 1.0 is full view, 1.6 is focused

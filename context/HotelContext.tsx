@@ -22,6 +22,7 @@ import { generateRandomAvatar } from '../services/avatarGenerator';
 import { audioEngine } from '../services/audioEngine';
 import { mockTikTokProvider, DEFAULT_GIFT_RULES, TikTokCommentEvent, TikTokGiftEvent, TikTokJoinEvent } from '../services/tiktokProvider';
 import { hotelBroadcast } from '../services/broadcastSync';
+import { browserReport } from '../services/browserReport';
 
 const triggerConfetti = (opts: any = {}) => {
   if (typeof window !== 'undefined') {
@@ -295,6 +296,81 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
     }));
   }, [activeFloorNumber]);
+
+  /**
+   * Watchdog de camara: suelta el zoom cuando el bloqueo expira.
+   *
+   * `lockUntil` se escribia pero NADIE lo leia para liberar la camara: el unico
+   * reset vivia al final de processNextEntry. Si algo cortaba el flujo a mitad
+   * (una excepcion, el anti-stall, o simplemente que el tour se quedara sin
+   * siguiente paso) la camara se quedaba clavada en ese encuadre para siempre.
+   *
+   * Aqui se comprueba periodicamente: si el lock expiro y no hay ninguna
+   * entrada en curso, se vuelve a la vista general. Nunca se pisa una camara
+   * que aun esta en uso.
+   */
+  useEffect(() => {
+    const camWatchdog = setInterval(() => {
+      const s = stateRef.current;
+      const cam = s.camera;
+      if (cam.targetType === 'GENERAL') return;
+      if (cam.lockUntil > Date.now()) return;      // aun dentro del tiempo
+      if (isProcessingEntryRef.current) return;   // hay una animacion en curso
+
+      setState((prev) => {
+        if (prev.camera.targetType === 'GENERAL') return prev;
+        if (prev.camera.lockUntil > Date.now()) return prev;
+        return {
+          ...prev,
+          camera: {
+            targetType: 'GENERAL',
+            targetFloor: prev.activeFloorView || 1,
+            zoom: 1.0,
+            priority: 5,
+            lockUntil: 0,
+          },
+        };
+      });
+    }, 700);
+
+    return () => clearInterval(camWatchdog);
+  }, []);
+
+  /**
+   * Recorre el hotel piso por piso con zoom in suave: desde el piso 1 hasta la
+   * cima, mostrando las 4 habitaciones de cada piso a la vez, y termina
+   * mostrando el edificio completo a la espera del siguiente evento.
+   *
+   * Se interrumpe si el nucleo del hotel crea/derriba pisos mientras dura
+   * (compara `floors.length` antes y despues de cada pausa).
+   */
+  const runFloorTour = useCallback(
+    async (speed = 1.0) => {
+      const first = stateRef.current.floors.length;
+      const stepMs = Math.round(1500 * speed);
+      const dwellMs = Math.round(1400 * speed);
+
+      // Empieza siempre por el piso 1 y sube hasta el mas alto existente.
+      for (let floor = 1; floor <= first; floor++) {
+        // El watchdog anti-stall reinicia el ingreso si pasan 9s sin progreso.
+        // El tour puede durarlo, asi que hay que refrescar la marca en cada
+        // piso o el watchdog abortaria la entrada a mitad del recorrido.
+        lastProgressTimestampRef.current = Date.now();
+        setCameraFocus('TOUR', floor, undefined, 3, stepMs);
+        await new Promise((r) => setTimeout(r, dwellMs));
+      }
+
+      lastProgressTimestampRef.current = Date.now();
+      // La cima del edificio (penthouse) antes de cerrar.
+      setCameraFocus('PENTHOUSE', first, undefined, 2, stepMs);
+      await new Promise((r) => setTimeout(r, dwellMs));
+
+      lastProgressTimestampRef.current = Date.now();
+      // Cierre: edificio completo y quieto, esperando donation o nuevo ingreso.
+      resetCamera();
+    },
+    [setCameraFocus, resetCamera]
+  );
 
   // Global Event Triggers (Declared early so sendGift and others can access it)
   const triggerEvent = useCallback((eventType: GlobalEventType) => {
@@ -645,6 +721,14 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...prev.residents[residentId],
           location: 'elevator',
           currentAction: 'entering_hotel',
+          // Se fija el piso destino aqui tambien, no solo en el PASO 5.
+          //
+          // BUG: FloorRenderer mete en el pasillo a todo residente con
+          // isEntering=true que coincida en floorNumber. Como aqui el piso
+          // seguia siendo 0 (planta baja), el personaje se dibujaba en el
+          // pasillo de abajo y se quedaba ahi atascado: si el PASO 5 no
+          // llegaba a ejecutarse, nunca se movia de sitio.
+          floorNumber: assignedFloor,
         },
       },
     }));
@@ -658,12 +742,18 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       receptionAttending: null,
     }));
 
-    setCameraFocus('ELEVATOR', assignedFloor, targetRoom.number, 3, Math.round(2800 * speed));
+    // Zoom OUT a la vista completa del hotel al entrar al ascensor: el espectador
+    // ve el edificio entero justo cuando el personaje deja de estar en planta baja.
+    resetCamera();
     audioEngine.playElevatorChime();
 
     await new Promise((r) => setTimeout(r, Math.round(800 * speed)));
 
-    // PASO 5: Sale del ascensor en el piso asignado y camina por el pasillo
+    // PASO 5: Sale del ascensor y entra directamente en su habitacion.
+    // Antes pasaba por 'corridor' (PASO 5) y luego 'room' (PASO 6), lo que dejaba
+    // a los residentes atascados en el pasillo cuando el piso no coincidia con el
+    // que dibujaba FloorRenderer. Ahora va directo del ascensor a la habitacion,
+    // que es adonde va el personaje de todas formas.
     lastProgressTimestampRef.current = Date.now();
     setState((prev) => {
       const r = prev.residents[residentId];
@@ -674,9 +764,13 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...prev.residents,
           [residentId]: {
             ...r,
-            location: 'corridor',
+            // floorNumber debe ser el destino: si no, el renderer lo dibuja en
+            // el piso equivocado y parece congelado en el pasillo.
+            floorNumber: assignedFloor,
+            location: 'room',
             coordX: 50,
-            currentAction: 'walking',
+            currentAction: 'celebrating',
+            isEntering: false,
           },
         },
       };
@@ -719,8 +813,14 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     checkFloorFullStatus(assignedFloor);
     await new Promise((r) => setTimeout(r, Math.round(800 * speed)));
 
-    // Volver a la vista general completa
+    // PASO 7: Zoom out a la vista completa del hotel
     resetCamera();
+    await new Promise((r) => setTimeout(r, Math.round(1200 * speed)));
+
+    // PASO 8: Tour panoramico. Zoom in suave piso por piso desde el 1 hasta la
+    // cima, mostrando las 4 habitaciones de cada piso, y termina con el
+    // edificio completo esperando al siguiente evento.
+    await runFloorTour(speed);
     } catch {
       // safely handle any unexpected exception
     } finally {
@@ -735,13 +835,14 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const watchdog = setInterval(() => {
+      const stalled = Date.now() - lastProgressTimestampRef.current > 9000;
       const isStuck =
-        state.entryQueue.length > 0 &&
-        isProcessingEntryRef.current &&
-        Date.now() - lastProgressTimestampRef.current > 9000;
+        state.entryQueue.length > 0 && isProcessingEntryRef.current && stalled;
 
       if (isStuck) {
-        // True stall detected (over 9s with zero progress)
+        // True stall (over 9s with zero progress). El flag se libera para
+        // permitir el relanzamiento; el try/finally de processNextEntry lo
+        // vuelve a poner, asi que un ingreso largo no se solapa consigo mismo.
         isProcessingEntryRef.current = false;
         processNextEntry();
       } else if (state.entryQueue.length > 0 && !isProcessingEntryRef.current) {
@@ -794,14 +895,24 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // Match resident by username, or pick a random resident if commenter isn't resident yet
-    let targetResident: Resident | undefined;
-    if (username) {
-      const clean = username.replace('@', '').toLowerCase();
-      targetResident = residentsList.find((r) => r.username.toLowerCase() === clean);
-    }
+    // El comentario solo se atribuye a un residente si ese residente existe.
+    //
+    // BUG (2026-10-04): antes se elegia un residente AL AZAR cuando el autor no
+    // estaba dentro, asi que los mensajes aparecian sobre la cabeza de otra
+    // persona: el espectador veia que "su" mensaje decia otra cosa.
+    const targetResident: Resident | undefined = username
+      ? (() => {
+          const clean = username.replace('@', '').toLowerCase();
+          return residentsList.find((r) => r.username.toLowerCase() === clean);
+        })()
+      : undefined;
+
     if (!targetResident) {
-      targetResident = residentsList[Math.floor(Math.random() * residentsList.length)];
+      browserReport.info('comentario', 'descartado: el autor no es residente', {
+        usuario: username || '(anonimo)',
+        texto: (comment || '').slice(0, 60),
+      });
+      return;
     }
 
     const commentText = comment || '¡Saludos a todos desde el stream! 👋';
@@ -1557,26 +1668,89 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setState(msg.payload.state);
           }
           break;
-        case 'TIKTOK_EVENT':
-          if (msg.payload.eventType === 'comment') {
-            const comment = msg.payload.comment || '';
-            const uname = msg.payload.username;
-            const isEntryKeyword = comment.toLowerCase().includes('entrar') || comment.toLowerCase().includes('hotel');
-            if (isEntryKeyword) {
+        case 'TIKTOK_EVENT': {
+          // BUG (2026-10-04): la entrada a un comentario que contenga 'entrar' o
+          // 'hotel', fijo y escrito aqui. Los rules del panel de admin
+          // (entryMode, keyword, likes, regalos) se ignoraban por completo, asi
+          // que en un live real NUNCA entraba nadie: los espectadores escriben
+          // cualquier cosa y casi ninguno decia esas dos palabras. De ahi el
+          // 'no entra ningun usuario' con la conexion perfectamente sana.
+          //
+          // Ahora se respeta la configuracion del hotel.
+          const p = msg.payload as any;
+          const uname = p.username;
+          const comment = (p.comment || '').toString();
+
+          if (p.eventType === 'comment') {
+            const rules = stateRef.current.entryRules;
+            const keyword = (rules?.keyword || '').toString().toLowerCase().trim();
+            const matchesKeyword = keyword
+              ? comment.toLowerCase().includes(keyword)
+              : false;
+
+            let shouldEnter = true;
+            switch (rules?.entryMode) {
+              case 'KEYWORD_ONLY':
+                shouldEnter = matchesKeyword;
+                break;
+              case 'SHARE_LIVE':
+              case 'LIKE_COUNT':
+              case 'GIFT_ONLY':
+              case 'FOLLOWER_ONLY':
+                // Estos los dispara el propio evento correspondiente, no un
+                // comentario suelto: aqui solo se muestra el comentario.
+                shouldEnter = false;
+                break;
+              case 'ANY_COMMENT':
+              default:
+                // Cualquier comentario hace entrar. La palabra clave NO se exige
+                // aqui: en ANY_COMMENT el hotel abre a todo el que habla, que es
+                // lo que un streamer quiere para llenar el hotel. Si lo que quiere
+                // es exigirla, debe elegir KEYWORD_ONLY en el panel de admin.
+                shouldEnter = true;
+                break;
+            }
+
+            if (shouldEnter) {
+              browserReport.info('entrada', `usuario entra: ${uname}`, {
+                modo: rules?.entryMode,
+                comentario: comment.slice(0, 60),
+              });
               joinViewer(uname);
             } else {
+              browserReport.info('entrada', `comentario sin entrada: ${uname}`, {
+                modo: rules?.entryMode,
+                motivo: rules?.entryMode === 'KEYWORD_ONLY' ? 'falta palabra clave' : 'modo sin entrada por comentario',
+              });
               sendComment(uname, comment);
             }
-          } else if (msg.payload.eventType === 'gift') {
-            sendGift(msg.payload.giftId || 'gift_rose', msg.payload.username);
-          } else if (msg.payload.eventType === 'share') {
-            simulateUserShare(msg.payload.username);
-          } else if (msg.payload.eventType === 'like') {
-            simulateUserLikes(msg.payload.username, msg.payload.likeCount || 20);
-          } else if (msg.payload.eventType === 'follow') {
-            simulateUserFollow(msg.payload.username);
+          } else if (p.eventType === 'gift') {
+            sendGift(p.giftId || 'gift_rose', p.username);
+          } else if (p.eventType === 'share') {
+            // Compartir el live es una de las formas de entrar.
+            const rules = stateRef.current.entryRules;
+            if (rules?.entryMode === 'ANY_COMMENT' || rules?.entryMode === 'SHARE_LIVE') {
+              joinViewer(uname);
+            } else {
+              simulateUserShare(uname);
+            }
+          } else if (p.eventType === 'like') {
+            const rules = stateRef.current.entryRules;
+            if (rules?.entryMode === 'LIKE_COUNT') {
+              joinViewer(uname);
+            } else {
+              simulateUserLikes(uname, p.likeCount || 20);
+            }
+          } else if (p.eventType === 'follow') {
+            const rules = stateRef.current.entryRules;
+            if (rules?.entryMode === 'FOLLOWER_ONLY' || rules?.entryMode === 'ANY_COMMENT') {
+              joinViewer(uname);
+            } else {
+              simulateUserFollow(uname);
+            }
           }
           break;
+        }
       }
     });
 

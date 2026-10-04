@@ -15,6 +15,15 @@ export const HotelView: React.FC = () => {
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const buildingRef = useRef<HTMLDivElement>(null);
+  // Referencias a las filas reales de cada piso. El encuadre se calcula midiendo
+  // el DOM en vez de estimando un porcentaje: el render apila los pisos en orden
+  // INVERSO (el mas alto arriba) y los pisos se crean y derriban en caliente, asi
+  // que cualquier formula fija acaba apuntando a zonas vacias.
+  const floorRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // Posicion vertical medida de cada piso (porcentaje sobre la altura del
+  // edificio). Se declara ANTES de floorYPercent porque este lo consume.
+  const [floorYMap, setFloorYMap] = useState<Record<number, number>>({});
 
   // Dynamic scale so the ENTIRE building fits 100% in GENERAL view without anyone cut off
   const [autoFitScale, setAutoFitScale] = useState(0.75);
@@ -71,38 +80,74 @@ export const HotelView: React.FC = () => {
 
   const totalBuildingLevels = Math.max(1, floors.length) + 1.2;
 
-  if (camera.targetType === 'RECEPTION') {
-    // Dramatic close-up on Don Pepe and the newly entering resident at reception desk
+  /**
+   * Origen vertical MEDIDO de un piso, como porcentaje sobre la altura del
+   * edificio. Antes se estimaba con `(1 - piso/niveles) * 100`, que es
+   * exactamente lo que apuntaba a zonas equivocadas: el render invierte el orden
+   * de los pisos y la planta baja y el rooftop ocupan alto propio, asi que la
+   * formula no coincide con la posicion real de nada.
+   *
+   * Si el nodo no esta montado todavia, cae a una estimacion conservadora.
+   */
+  const floorYPercent = (floorNumber: number): number => {
+    const measured = floorYMap[floorNumber];
+    if (typeof measured === 'number') return measured;
+    // Sin medicion todavia: estimacion conservadora, se corrige al pintar el DOM.
+    const b = buildingRef.current;
+    const row = floorRefs.current[floorNumber];
+    if (!b || !row) return 50;
+    const bRect = b.getBoundingClientRect();
+    const rRect = row.getBoundingClientRect();
+    if (!bRect.height || !rRect.height) return 50;
+    const centerInBuilding = rRect.top - bRect.top + rRect.height / 2;
+    return Math.max(4, Math.min(96, (centerInBuilding / bRect.height) * 100));
+  };
+
+  // =====================================================================
+  // ZOOM DESACTIVADO (2026-10-04)
+  //
+  // La camara se queda en la vista general siempre. El zoom por piso daba
+  // problemas: apuntaba a zonas vacias y, con la medicion del DOM, Provoco una
+  // excepcion en el navegador. Se conserva TODO el codigo debajo para poder
+  // reactivarlo poniendo ZOOM_ENABLED = true, una vez se entienda por que
+  // enfocaba donde no era.
+  // =====================================================================
+  const ZOOM_ENABLED = false;
+
+  if (ZOOM_ENABLED && camera.targetType === 'RECEPTION') {
+    // Don Pepe y el residente nuevo, en el mostrador de planta baja.
     transformValue = 'scale(2.15)';
     transformOriginValue = '50% 92%';
-  } else if (camera.targetType === 'ELEVATOR') {
+  } else if (ZOOM_ENABLED && camera.targetType === 'ELEVATOR') {
     if (!camera.targetFloor || camera.targetFloor === 0) {
-      // Planta baja elevator entrance
+      // Entrada del ascensor en planta baja
       transformValue = 'scale(2.15)';
       transformOriginValue = '50% 90%';
     } else {
-      // Elevator door on target floor
-      const levelIndex = camera.targetFloor;
-      const yPercent = Math.max(12, Math.min(84, Math.round((1 - levelIndex / totalBuildingLevels) * 100)));
+      // Puerta del ascensor en el piso destino (medido, no estimado)
       transformValue = 'scale(2.1)';
-      transformOriginValue = `50% ${yPercent}%`;
+      transformOriginValue = `50% ${floorYPercent(camera.targetFloor)}%`;
     }
-  } else if (camera.targetType === 'ROOM') {
-    // Protagonist zoom directly on the resident's room & character
+  } else if (ZOOM_ENABLED && camera.targetType === 'ROOM') {
+    // Zoom al residente y su habitacion
     const roomNum = camera.targetRoomNumber || 101;
     // Left rooms (101, 103) vs Right rooms (102, 104)
     const isLeftRoom = roomNum % 2 !== 0;
     const xPercent = isLeftRoom ? '30%' : '70%';
 
     const levelIndex = camera.targetFloor || Math.floor(roomNum / 100) || 1;
-    const yPercent = Math.max(12, Math.min(82, Math.round((1 - levelIndex / totalBuildingLevels) * 100)));
-
     transformValue = 'scale(2.25)';
-    transformOriginValue = `${xPercent} ${yPercent}%`;
-  } else if (camera.targetType === 'PENTHOUSE') {
+    transformOriginValue = `${xPercent} ${floorYPercent(levelIndex)}%`;
+  } else if (ZOOM_ENABLED && camera.targetType === 'PENTHOUSE') {
     // Zoom in on VIP Penthouse
     transformValue = 'scale(2.0)';
     transformOriginValue = '50% 8%';
+  } else if (ZOOM_ENABLED && camera.targetType === 'TOUR') {
+    // Tour panoramico: enfoca el PISO COMPLETO (las 4 habitaciones a la vez),
+    // no una habitacion suelta.
+    const levelIndex = camera.targetFloor || 1;
+    transformValue = 'scale(1.45)';
+    transformOriginValue = `50% ${floorYPercent(levelIndex)}%`;
   } else {
     // GENERAL VIEW: Always fits 100% of users and building on screen!
     transformValue = `scale(${autoFitScale})`;
@@ -114,6 +159,62 @@ export const HotelView: React.FC = () => {
     transformOrigin: transformOriginValue,
     transition: 'transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
   };
+
+  // floorYPercent() mide el DOM, asi que el transformOrigin se recalcula con
+  // ResizeObserver + un re-render cuando cambia el encuadre.
+  //
+  // Antes se usaba un useReducer + useEffect que se disparaba en cascada: el
+  // dispatch provocaba un render que volvia a medir, y con floors cambiando de
+  // alto (pisos que se crean/derriban) el efecto se repetia sin fin — la
+  // "client-side exception" que veia el usuario. Ahora la medicion vive en el
+  // estado floorYMap (declarado arriba) y solo cambia cuando el DOM cambia de
+  // verdad.
+  const measureFloors = useCallback(() => {
+    const b = buildingRef.current;
+    if (!b) return;
+    const bRect = b.getBoundingClientRect();
+    if (!bRect.height) return;
+    const next: Record<number, number> = {};
+    let changed = false;
+    for (const key of Object.keys(floorRefs.current)) {
+      const row = floorRefs.current[Number(key)];
+      if (!row) continue;
+      const rRect = row.getBoundingClientRect();
+      if (!rRect.height) continue;
+      const pct = Math.max(
+        4,
+        Math.min(96, ((rRect.top - bRect.top + rRect.height / 2) / bRect.height) * 100)
+      );
+      next[Number(key)] = pct;
+      const prev = floorYMap[Number(key)];
+      if (prev === undefined || Math.abs(prev - pct) > 0.5) changed = true;
+    }
+    if (changed) setFloorYMap(next);
+  }, [floorYMap]);
+
+  // Recalcular cuando cambia el encuadre o el numero de pisos, y despues de
+  // pintar el DOM (requestAnimationFrame) para que las refs ya existan.
+  useEffect(() => {
+    const raf = requestAnimationFrame(measureFloors);
+    return () => cancelAnimationFrame(raf);
+  }, [measureFloors, camera.targetType, camera.targetFloor, camera.targetRoomNumber, floors.length]);
+
+  // Y de nuevo cuando cambia el tamano de la ventana o el del edificio.
+  useEffect(() => {
+    const b = buildingRef.current;
+    if (!b || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => measureFloors());
+    ro.observe(b);
+    for (const key of Object.keys(floorRefs.current)) {
+      const row = floorRefs.current[Number(key)];
+      if (row) ro.observe(row);
+    }
+    window.addEventListener('resize', measureFloors);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measureFloors);
+    };
+  }, [measureFloors, floors.length]);
 
   // Lobby corridor residents (visiting reception)
   const groundFloorResidents = Object.values(residents).filter(
@@ -191,17 +292,23 @@ export const HotelView: React.FC = () => {
                   (r.isEntering || r.currentAction === 'entering_hotel')
               );
               return (
-                <FloorRenderer
+                <div
                   key={floor.id}
-                  floor={floor}
-                  rooms={rooms}
-                  residents={residents}
-                  timeOfDay={timeOfDay}
-                  globalEvent={globalEvent.type}
-                  focusedRoomNumber={camera.targetRoomNumber}
-                  isElevatorOpen={isElevatorOperating}
-                  demolitionState={state.demolitionState}
-                />
+                  ref={(el) => {
+                    floorRefs.current[floor.floorNumber] = el;
+                  }}
+                >
+                  <FloorRenderer
+                    floor={floor}
+                    rooms={rooms}
+                    residents={residents}
+                    timeOfDay={timeOfDay}
+                    globalEvent={globalEvent.type}
+                    focusedRoomNumber={camera.targetRoomNumber}
+                    isElevatorOpen={isElevatorOperating}
+                    demolitionState={state.demolitionState}
+                  />
+                </div>
               );
             })}
           </div>

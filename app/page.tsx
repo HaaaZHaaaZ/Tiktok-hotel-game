@@ -2,13 +2,29 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { HotelProvider, useHotel } from '../context/HotelContext';
 import { TikTokLiveFrame } from '../components/hotel/TikTokLiveFrame';
 import { HotelView } from '../components/hotel/HotelView';
 import { hotelBroadcast } from '../services/broadcastSync';
+import { tiktokLiveConnector } from '../services/tiktokLiveConnector';
+import { instalarReportes } from '../services/browserReport';
 
 function HomeLiveScreen() {
   const { joinViewer, state } = useHotel();
+
+  // Reportar al servidor cualquier excepcion del navegador. Sin esto, una
+  // excepcion en un render deja la pagina muerta sin dejar rastro observable.
+  useEffect(() => {
+    instalarReportes();
+  }, []);
+
+  // Al montar, reengancharse a la conexion del servidor si sigue abierta.
+  // Navegar entre / y /admin desmonta este componente y el conector del
+  // navegador, pero el WebSocket vive en el servidor: aqui se recupera.
+  useEffect(() => {
+    tiktokLiveConnector.resumeIfActive();
+  }, []);
 
   const handleQuickAdd = () => {
     const names = ['pedrito_gamer', 'laura_dance', 'carlos_pro', 'sofi_flow', 'mateo_tt', 'camila_live', 'lucas_ok', 'valen_star'];

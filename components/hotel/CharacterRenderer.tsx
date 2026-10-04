@@ -102,14 +102,16 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
         )}
       </div>
 
-      {/* Speech Bubble (Comic dialogue, elevated z-50) */}
+      {/* Globo de dialogo (personajes sueltos en pasillo/planta baja).
+          Estaba en -top-14, que lo sacaba del contenedor del personaje y lo
+          recortaba. Ahora se dibuja en el centro del personaje. */}
       {speechBubble && (
-        <div className="absolute -top-14 z-50 animate-in fade-in zoom-in-95 duration-200 pointer-events-none w-max max-w-[130px]">
-          <div className="relative bg-white text-slate-950 px-2 py-0.5 rounded-lg shadow-2xl border-2 border-slate-900 text-[9px] font-black text-center leading-tight whitespace-normal break-words">
-            <span className="text-amber-500 mr-0.5">💬</span>{speechBubble.text}
-            {/* Bubble Tail */}
-            <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-slate-900" />
-            <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[4px] border-t-white" />
+        <div className="absolute inset-x-0 top-1/2 z-50 flex justify-center pointer-events-none px-1 -translate-y-full">
+          <div className="relative bg-white text-slate-950 px-1.5 py-1 rounded-md border-2 border-slate-900 shadow-xl text-[9px] font-black max-w-[120px] text-center leading-tight break-words whitespace-normal animate-in zoom-in-95 duration-200">
+            <span className="text-amber-500 mr-0.5">💬</span>
+            {speechBubble.text}
+            <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[4px] border-t-slate-900" />
+            <div className="absolute left-1/2 -bottom-0.5 -translate-x-1/2 w-0 h-0 border-l-[2px] border-l-transparent border-r-[2px] border-r-transparent border-t-[3px] border-t-white" />
           </div>
         </div>
       )}

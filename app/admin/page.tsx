@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useState, useSyncExternalStore, useEffect } from 'react';
 import Link from 'next/link';
 import { useHotel, HotelProvider } from '../../context/HotelContext';
 import { PersonalityType, GlobalEventType, TimeOfDay, EntryRulesConfig } from '../../types/hotel';
@@ -8,6 +8,8 @@ import { DEFAULT_GIFT_RULES } from '../../services/tiktokProvider';
 import { hotelBroadcast } from '../../services/broadcastSync';
 import { tiktokLiveConnector, TikTokLiveStatus } from '../../services/tiktokLiveConnector';
 import { TikTokLiveFrame } from '../../components/hotel/TikTokLiveFrame';
+import { TikTokLogPanel } from '../../components/admin/TikTokLogPanel';
+import { instalarReportes } from '../../services/browserReport';
 import { HotelView } from '../../components/hotel/HotelView';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +43,9 @@ const AdminPanelContent: React.FC = () => {
     simulateUserFollow,
   } = useHotel();
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'tiktok' | 'rules' | 'residents' | 'events' | 'gifts'>('tiktok');
+  const [activeAdminTab, setActiveAdminTab] = useState<
+    'tiktok' | 'log' | 'rules' | 'residents' | 'events' | 'gifts'
+  >('tiktok');
 
   // TikTok Live Connection State
   const [tiktokUsername, setTiktokUsername] = useState('@streamer_hotel');
@@ -84,6 +88,25 @@ const AdminPanelContent: React.FC = () => {
       ...prev.slice(0, 49),
     ]);
   };
+
+  // Al montar, recuperar la conexion viva del servidor si la hay. Sin esto,
+  // cambiar de /admin a / (o recargar) obligaba a volver a pulsar "Conectar"
+  // aunque el WebSocket siguiera abierto en el servidor.
+  useEffect(() => {
+    let cancelled = false;
+    instalarReportes();
+    tiktokLiveConnector.resumeIfActive().then((res) => {
+      if (cancelled || !res) return;
+      setConnectionStatus(res);
+      if (res.streamer) {
+        setTiktokUsername(res.streamer);
+        addLog('info', `Reconectado automaticamente a ${res.streamer}.`);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Connect to TikTok LIVE
   const handleConnectTikTok = async () => {
@@ -359,6 +382,17 @@ const AdminPanelContent: React.FC = () => {
           <span>Conector TikTok LIVE (Producción)</span>
         </button>
         <button
+          onClick={() => setActiveAdminTab('log')}
+          className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 ${
+            activeAdminTab === 'log'
+              ? 'bg-amber-500 text-slate-950 shadow-md'
+              : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          <span>📋</span>
+          <span>Log de Conexión</span>
+        </button>
+        <button
           onClick={() => setActiveAdminTab('rules')}
           className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 ${
             activeAdminTab === 'rules'
@@ -611,6 +645,27 @@ const AdminPanelContent: React.FC = () => {
               <span>Hotel: {residentsList.length} ocupantes</span>
               <span>Cola: {state.entryQueue.length}</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: LOG DE CONEXION */}
+      {activeAdminTab === 'log' && (
+        <div className="max-w-4xl mx-auto animate-in fade-in duration-200">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <div className="border-b border-slate-800 pb-3 mb-4">
+              <h2 className="text-sm font-black text-amber-400 uppercase tracking-wide flex items-center gap-2">
+                <span>📋</span>
+                <span>Log de Conexión con TikTok</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Qué se mantiene conectado y qué eventos llegan. Si algo falla, pulsa
+                «Copiar todo el log» y pégamelo: sale el estado de la tubería y las
+                últimas líneas, que es justo lo que hace falta para localizar el
+                problema.
+              </p>
+            </div>
+            <TikTokLogPanel />
           </div>
         </div>
       )}
