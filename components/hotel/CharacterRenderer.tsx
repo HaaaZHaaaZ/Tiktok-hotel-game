@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Resident } from '../../types/hotel';
+import { Resident, ResidentAvatar, SUPERPOWERS } from '../../types/hotel';
 
 interface CharacterRendererProps {
   resident: Resident;
@@ -14,7 +14,45 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   scale = 1,
   showName = true,
 }) => {
-  const { avatar, personality, currentAction, stability, vipLevel, speechBubble } = resident;
+  // Red de seguridad: un residente corrupto no debe tumbar la pagina entera.
+  // Este componente se dibuja dozens de veces por frame; si uno falla, React
+  // desmonta el arbol y los personajes desaparecen. Se sale con un null.
+  if (!resident) return null;
+
+  const { personality, currentAction, stability, vipLevel, speechBubble } = resident;
+
+  // Un residente puede llegar SIN avatar: los que ya estaban guardados en
+  // localStorage se crearon antes de que el avatar formara parte del modelo, y
+  // al leer `avatar.outfitColor` de undefined la pagina reventaba con
+  // "Cannot read properties of undefined (reading 'outfitStyle')" en CADA render
+  // (lo que hacia que no se vieran bien los personajes ni entraran los nuevos).
+  //
+  // Se rellena un avatar por defecto en memoria. El siguiente guardado ya
+  // persiste el avatar completo, asi que el problema desaparece solo.
+  //
+  // OJO: `??` solo cubre null/undefined, no un avatar PARCIAL (`{skinColor}` sin
+  // el resto). El merge con el objeto por defecto cubre ambos casos: asi
+  // `avatar.outfitStyle` nunca es undefined y los `=== 'suit'` de mas abajo no
+  // pueden reventar.
+  const AVATAR_DEFECTO: ResidentAvatar = {
+    skinColor: '#F5CBA7',
+    hairStyle: 'sleek',
+    hairColor: '#2C1810',
+    outfitStyle: 'casual',
+    outfitColor: '#3498DB',
+    accessory: 'none',
+    eyeType: 'normal',
+  };
+  const avatar: ResidentAvatar = {
+    ...AVATAR_DEFECTO,
+    ...(resident.avatar && typeof resident.avatar === 'object' ? resident.avatar : {}),
+  };
+
+  // Un residente restaurado de una version anterior puede venir sin displayName.
+  const displayName =
+    typeof resident.displayName === 'string' && resident.displayName.trim()
+      ? resident.displayName
+      : `@${resident.username || 'espectador'}`;
 
   // Stability warning: time running out / stress detection
   const isCritical = stability <= 15;
@@ -40,6 +78,7 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
 
   return (
     <div
+      data-resident-id={resident.id}
       className={`relative inline-flex flex-col items-center select-none ${animClass}`}
       style={{
         transform: `scale(${scale})`,
@@ -48,6 +87,28 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
     >
       {/* SUPERIOR LAYER: Action Floating Emotes & Time Warning (z-50, never cropped) */}
       <div className="absolute -top-8 z-50 flex flex-col items-center pointer-events-none w-max">
+        {/* Superpoderes ganados por likes. Se dibujan siempre (tambien si esta
+            estresado): son un logro del usuario y deben verse. */}
+        {resident.superpowers && resident.superpowers.length > 0 && (
+          <div className="flex items-center gap-0.5 mb-0.5">
+            {resident.superpowers.map((id) => {
+              const def = SUPERPOWERS.find((p) => p.id === id);
+              if (!def) return null;
+              return (
+                <span
+                  key={id}
+                  title={`${def.name}: ${def.description}`}
+                  className={`text-[10px] leading-none drop-shadow-[0_0_3px_rgba(0,0,0,0.9)] ${
+                    id === 'habitacion_doble' ? 'animate-bounce' : 'animate-pulse'
+                  }`}
+                >
+                  {def.icon}
+                </span>
+              );
+            })}
+          </div>
+        )}
+
         {/* Urgent Time Running Out Stress Badge */}
         {isCritical ? (
           <div className="flex items-center gap-1 bg-red-600 text-white font-black text-[8px] px-1.5 py-0.5 rounded-full shadow-xl border border-white animate-bounce">
@@ -364,7 +425,7 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
       {/* Username Tag Badge */}
       {showName && (
         <div className="mt-0.5 bg-black/85 backdrop-blur-xs text-amber-200 font-black text-[7.5px] px-1.5 py-0.2 rounded-full border border-amber-400/40 shadow-xs max-w-[65px] truncate text-center tracking-tight leading-none">
-          {resident.displayName}
+          {displayName}
         </div>
       )}
     </div>

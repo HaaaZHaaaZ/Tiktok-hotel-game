@@ -17,7 +17,7 @@
  * El usuario viene en d.user.nickname; uniqueId no viene en estos mensajes.
  */
 
-import { tiktokLogger } from './logger';
+import { countEvent, logError, logInfo, logWarn } from './logger';
 
 import {
   TikTokLiveConnection,
@@ -26,7 +26,7 @@ import {
   TikTokLiveConnectionState,
 } from 'tiktok-live-connector';
 
-export type HotelEventType = 'comment' | 'gift' | 'like' | 'share' | 'follow';
+export type HotelEventType = 'comment' | 'gift' | 'like' | 'share' | 'follow' | 'join';
 
 export interface HotelEvent {
   id: string;
@@ -94,7 +94,7 @@ class LiveBridge {
     const toca = cursorEnFuturo || serverNow - this._lastPollLogAt > 20_000;
     if (toca) {
       this._lastPollLogAt = serverNow;
-      tiktokLogger.info('cliente', 'lectura del webhook', {
+      logInfo('cliente', 'lectura del webhook', {
         polls: this.polls,
         desfaseSeg: Math.round((since - serverNow) / 1000),
         buffer: this.buffer.length,
@@ -151,7 +151,13 @@ class LiveBridge {
     this.stopKeepAlive();
     this.lastEventAt = Date.now();
     this.keepAlive = setInterval(() => {
-      const ws: any = (this.conn as any)?.ws ?? (this.conn as any)?._ws;
+      // OJO con el nombre de la propiedad. En tiktok-live-connector v2.5.0 el
+      // socket interno se expone como `wsClient` (getter sobre
+      // `_wsClientInstance`). `conn.ws` y `conn._ws` NO existen: leerlos deja el
+      // ping sin destinatario, el try no lanza y el keepalive queda como codigo
+      // muerto — exactamente el bug de "se corta solo".
+      const conn: any = this.conn;
+      const ws: any = conn?.wsClient ?? conn?._wsClientInstance;
       try {
         if (ws && typeof ws.ping === 'function') ws.ping();
       } catch {
@@ -171,7 +177,7 @@ class LiveBridge {
         // 5 minutos sin un solo evento: solo informativo, sin reconexion. Si el
         // live lleva tanto tiempo sin actividad, no hay nada que perder.
         this.lastError = 'Live sin actividad';
-        tiktokLogger.info('socket', '5 min sin actividad (sin reconectar)', {
+        logInfo('socket', '5 min sin actividad (sin reconectar)', {
           estado: this.state,
         });
       }
@@ -218,7 +224,7 @@ class LiveBridge {
     const clean = username.replace(/^@/, '').trim();
     if (!clean) throw new Error('Nombre de usuario requerido');
 
-    tiktokLogger.info('conectar', `pedido conectar @${clean}`, {
+    logInfo('conectar', `pedido conectar @${clean}`, {
       actual: this.streamer || null,
     });
 
@@ -255,7 +261,7 @@ class LiveBridge {
       this.conn = conn;
       this.wire(conn, user);
       this.startKeepAlive();
-      tiktokLogger.info('socket', `abriendo socket a @${user}`, {
+      logInfo('socket', `abriendo socket a @${user}`, {
         intento: this.attempts + 1,
       });
 
@@ -270,7 +276,7 @@ class LiveBridge {
       this.attempts = 0;
     } catch (err: any) {
       this.lastError = err?.message || String(err);
-      tiktokLogger.error('socket', `fallo al conectar: ${this.lastError}`, {
+      logError('socket', `fallo al conectar: ${this.lastError}`, {
         estadoPrevio: this.state,
         intento: this.attempts + 1,
       });
@@ -310,14 +316,14 @@ class LiveBridge {
           this.roomId = (s as any)?.roomId || this.roomId;
           this.lastError = '';
           this.attempts = 0;
-          tiktokLogger.info('socket', `conectado a @${user}`, {
+          logInfo('socket', `conectado a @${user}`, {
             roomId: this.roomId || null,
           });
         });
 
         conn.on(ControlEvent.ERROR, (e: any) => {
           this.lastError = e?.message || String(e);
-          tiktokLogger.error('socket', `error del socket: ${this.lastError}`, {
+          logError('socket', `error del socket: ${this.lastError}`, {
             estado: this.state,
           });
           // Un error aislado no tumba una conexion que sigue recibiendo eventos
@@ -328,7 +334,7 @@ class LiveBridge {
         });
 
         conn.on(ControlEvent.DISCONNECTED, () => {
-          tiktokLogger.warn('socket', `socket cerrado para @${user}`, {
+          logWarn('socket', `socket cerrado para @${user}`, {
             estado: this.state,
           });
           if (this.streamer === user) this.scheduleReconnect();
@@ -340,7 +346,7 @@ class LiveBridge {
           if (!comment) return;
           this.counts.chat++;
           const u = uname(d.user);
-          tiktokLogger.countEvent('chat', u);
+          countEvent('chat', u);
           emit({
             event: 'comment',
             username: u,
@@ -352,8 +358,8 @@ class LiveBridge {
         conn.on(WebcastEvent.GIFT, (d: any) => {
           this.counts.gift++;
           const u = uname(d.user);
-          tiktokLogger.countEvent('gift', u);
-          tiktokLogger.info('evento', 'regalo recibido', {
+          countEvent('gift', u);
+          logInfo('evento', 'regalo recibido', {
             usuario: u,
             regalo: d?.giftName || 'Regalo',
             diamantes: Number(d?.diamondCount) || 0,
@@ -372,7 +378,7 @@ class LiveBridge {
         // --- likes: el campo es `count`, no `likeCount` --
         conn.on(WebcastEvent.LIKE, (d: any) => {
           this.counts.like++;
-          tiktokLogger.countEvent('like', uname(d.user));
+          countEvent('like', uname(d.user));
           emit({
             event: 'like',
             username: uname(d.user),
@@ -381,16 +387,22 @@ class LiveBridge {
         });
 
         // --- entradas al room ---
+        //
+        // Se etiqueta como 'join', NO como 'share'. Antes se emitia 'share' y eso
+        // metia a la cola de Don Pepe a TODO el que entraba al room: `member` es
+        // el evento mas numeroso de TikTok (cientos por live, repetido por
+        // usuario) mientras que compartir de verdad es raro. Resultado: la fila
+        // crecia muy por encima de los espectadores reales.
         conn.on(WebcastEvent.MEMBER, (d: any) => {
           this.counts.member++;
-          tiktokLogger.countEvent('member', uname(d.user));
-          emit({ event: 'share', username: uname(d.user) });
+          countEvent('member', uname(d.user));
+          emit({ event: 'join', username: uname(d.user) });
         });
 
         // --- follow / compartir ---
         conn.on(WebcastEvent.SOCIAL, (d: any) => {
           this.counts.social++;
-          tiktokLogger.countEvent('social', uname(d?.user));
+          countEvent('social', uname(d?.user));
           const type = Number(d?.shareType ?? 0);
           emit({
             event: type === 3 ? 'follow' : 'share',
@@ -399,7 +411,7 @@ class LiveBridge {
         });
 
         conn.on(WebcastEvent.FOLLOW, (d: any) => {
-          tiktokLogger.countEvent('follow', uname(d?.user));
+          countEvent('follow', uname(d?.user));
           emit({ event: 'follow', username: uname(d?.user) });
         });
 
@@ -412,15 +424,25 @@ class LiveBridge {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
-    // Si ya entran eventos, el socket actual sirve: no abrir otro encima.
-    if (this.state === 'connected') return;
+    // NO salir por estar 'connected'.
+    //
+    // Antes habia aqui un `if (this.state === 'connected') return;` pensado para
+    // "si ya entran eventos, no abrir otro socket encima". El problema es que
+    // quien lo llama desde ControlEvent.DISCONNECTED lo hace DESPUES de que el
+    // socket murio, pero sin haber cambiado el estado: seguia en 'connected', asi
+    // que el guard salia y el socket muerto NUNCA se reconectaba. Sintoma exacto:
+    // "conecta, dura unos segundos y dejan de llegar eventos".
+    //
+    // Quien invoca esto ya sabe que hay que reconectar (el handler de ERROR lo
+    // llama solo si no esta 'connected'; el de DISCONNECTED porque el socket
+    // cerro). Se marca 'reconnecting' aqui abajo y el guard real es el timer.
     this.attempts++;
     const delay = Math.min(
       RECONNECT_BASE_MS * 2 ** (this.attempts - 1),
       RECONNECT_MAX_MS
     );
     this.state = 'reconnecting';
-    tiktokLogger.warn('socket', `reconectando en ${Math.round(delay / 1000)}s`, {
+    logWarn('socket', `reconectando en ${Math.round(delay / 1000)}s`, {
       intento: this.attempts,
       ultimoError: this.lastError || null,
       eventosHastaAhora: this.counts,
@@ -434,7 +456,7 @@ class LiveBridge {
   disconnect() {
     this.stopKeepAlive();
     if (this.streamer) {
-      tiktokLogger.info('conectar', `desconectando @${this.streamer}`, {
+      logInfo('conectar', `desconectando @${this.streamer}`, {
         eventosRecibidos: this.counts,
       });
     }

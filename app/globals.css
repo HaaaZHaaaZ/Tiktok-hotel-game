@@ -107,3 +107,157 @@
 .animate-tumble {
   animation: character-tumble 1.1s ease-in-out infinite;
 }
+
+/* ============================================================
+   DESALOJO: el personaje sale expulsado de su habitacion y cae
+   por el lateral del edificio hasta la calle.
+   ============================================================ */
+
+/* Caida con rebote contra la fachada: no cae en linea recta, se va
+   golpeando los salientes mientras gira.
+   `--fall-distance` lo fija el overlay al medir la distancia real desde la
+   habitacion hasta la calle; sin var, cae un tramo por defecto. */
+@keyframes evict-fall {
+  0%   { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  8%   { transform: translate(16px, calc(var(--fall-distance, 320px) * 0.07)) rotate(50deg); }
+  18%  { transform: translate(-12px, calc(var(--fall-distance, 320px) * 0.19)) rotate(120deg); }
+  30%  { transform: translate(20px, calc(var(--fall-distance, 320px) * 0.34)) rotate(215deg); }
+  44%  { transform: translate(-16px, calc(var(--fall-distance, 320px) * 0.51)) rotate(305deg); }
+  58%  { transform: translate(18px, calc(var(--fall-distance, 320px) * 0.67)) rotate(415deg); }
+  72%  { transform: translate(-14px, calc(var(--fall-distance, 320px) * 0.80)) rotate(535deg); }
+  86%  { transform: translate(11px, calc(var(--fall-distance, 320px) * 0.91)) rotate(660deg); opacity: 1; }
+  100% { transform: translate(0, var(--fall-distance, 320px)) rotate(740deg); opacity: 0.12; }
+}
+
+.animate-evict-fall {
+  animation: evict-fall 2.6s cubic-bezier(0.42, 0.05, 0.86, 0.55) forwards;
+}
+
+/* El personaje se sacude antes de salir volando (esta siendo expulsado). */
+@keyframes evict-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  20% { transform: translateX(-4px) rotate(-6deg); }
+  40% { transform: translateX(4px) rotate(6deg); }
+  60% { transform: translateX(-3px) rotate(-4deg); }
+  80% { transform: translateX(3px) rotate(4deg); }
+}
+
+.animate-evict-shake {
+  animation: evict-shake 0.28s ease-in-out 3;
+}
+
+/* Nube de polvo al aterrizar en la calle. */
+@keyframes evict-dust {
+  0%   { transform: scale(0.4); opacity: 0.85; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+.animate-evict-dust {
+  animation: evict-dust 0.9s ease-out forwards;
+}
+
+/* Marca de impacto: destello rojo que senala la habitacion de la que sale. */
+@keyframes evict-pop {
+  0%   { transform: scale(0.6); opacity: 1; }
+  70%  { transform: scale(1.35); opacity: 0.6; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.animate-evict-pop {
+  animation: evict-pop 0.7s ease-out forwards;
+}
+
+/* El contador de likes da un salto al sumar, para que se note que sube. */
+@keyframes like-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.animate-like-pop {
+  animation: like-pop 0.42s ease-out;
+}
+
+/* ============================================================
+   PODERES: rayo de energia que sale de quien lo gana y viaja
+   hasta el residente sobre el que se lanza.
+   ============================================================ */
+
+/* El proyectil viaja de origen a destino. `--tx`/`--ty` los fija el overlay
+   midiendo las posiciones reales de los dos personajes. */
+@keyframes power-travel {
+  0%   { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  12%  { transform: translate(calc(var(--tx) * 0.12), calc(var(--ty) * 0.12)) scale(1.25); opacity: 1; }
+  50%  { transform: translate(calc(var(--tx) * 0.5), calc(var(--ty) * 0.5 - 22px)) scale(1.1); opacity: 1; }
+  88%  { transform: translate(calc(var(--tx) * 0.88), calc(var(--ty) * 0.88)) scale(1.3); opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(0.5); opacity: 0; }
+}
+
+.animate-power-travel {
+  animation: power-travel 1.1s cubic-bezier(0.4, 0, 0.7, 1) forwards;
+}
+
+/* Pulso de carga en el emisor: se agranda antes de disparar. */
+@keyframes power-charge {
+  0%   { transform: scale(0.6); opacity: 0.5; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.animate-power-charge {
+  animation: power-charge 0.7s ease-out forwards;
+}
+
+/* Impacto en el receptor: destello que crece y se apaga. */
+@keyframes power-impact {
+  0%   { transform: scale(0.5); opacity: 1; }
+  55%  { transform: scale(2.1); opacity: 0.75; }
+  100% { transform: scale(2.9); opacity: 0; }
+}
+
+.animate-power-impact {
+  animation: power-impact 0.9s ease-out forwards;
+}
+
+/* El receptor se sacude al recibir el poder. */
+@keyframes power-receive {
+  0%, 100% { transform: translateX(0) scale(1); }
+  25% { transform: translateX(-4px) scale(1.12); }
+  50% { transform: translateX(4px) scale(1.18); }
+  75% { transform: translateX(-3px) scale(1.1); }
+}
+
+.animate-power-receive {
+  animation: power-receive 0.6s ease-in-out 2;
+}
+
+/* Estela de chispas que queda en el camino recorrido. */
+@keyframes power-spark {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.2); opacity: 0; }
+}
+
+.animate-power-spark {
+  animation: power-spark 0.8s ease-out forwards;
+}
+
+/* La habitacion se ensancha al absorber a la vecina. */
+@keyframes room-expand {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+.animate-room-expand {
+  animation: room-expand 0.7s ease-out;
+}
+
+/* Brillo que recorre la habitacion recien absorbida. */
+@keyframes room-absorb {
+  0%   { opacity: 0; }
+  40%  { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+
+.animate-room-absorb {
+  animation: room-absorb 1.2s ease-out forwards;
+}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tiktokLogger } from '../../../../services/tiktok/logger';
+import { clear, logFilePath, since as sinceTs, tallySnapshot, toText } from '../../../../services/tiktok/logger';
 import { liveBridge } from '../../../../services/tiktok/liveBridge';
 
 export const runtime = 'nodejs';
@@ -25,10 +25,10 @@ export async function GET(req: NextRequest) {
   const format = q.get('format') || 'json';
   const sinceSec = Number(q.get('since') || 0);
 
-  if (q.get('clear')) tiktokLogger.clear();
+  if (q.get('clear')) clear();
 
-  const since = sinceSec > 0 ? Date.now() - sinceSec * 1000 : 0;
-  const entries = tiktokLogger.since(since);
+  const desde = sinceSec > 0 ? Date.now() - sinceSec * 1000 : 0;
+  const entries = sinceTs(desde);
   const st = liveBridge.status();
 
   const summary = {
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     streamer: st.streamer,
     uptimeSeg: Math.round(st.uptimeMs / 1000),
     eventos: st.counts,
-    recibidoPorTikTok: tiktokLogger.tallySnapshot(),
+    recibidoPorTikTok: tallySnapshot(),
     lecturasCliente: st.polls,
     segundosDesdeUltimaLectura: st.pollAgeSec,
     desfaseCursorSeg: st.lastPollSince
@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       : null,
     bufferPendiente: st.bufferSize,
     ultimoError: st.lastError,
+    ficheroLog: logFilePath(),
   };
 
   if (format === 'text') {
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
       JSON.stringify(summary, null, 2),
       '',
       '=== LOG ===',
-      entries.length ? tiktokLogger.toText(entries) : '(sin lineas)',
+      entries.length ? toText(entries) : '(sin lineas)',
     ].join('\n');
     return new NextResponse(lines, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -67,6 +68,6 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  tiktokLogger.clear();
+  clear();
   return NextResponse.json({ success: true, message: 'Log vaciado' });
 }

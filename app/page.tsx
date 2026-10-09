@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { HotelProvider, useHotel } from '../context/HotelContext';
 import { TikTokLiveFrame } from '../components/hotel/TikTokLiveFrame';
 import { HotelView } from '../components/hotel/HotelView';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { hotelBroadcast } from '../services/broadcastSync';
 import { tiktokLiveConnector } from '../services/tiktokLiveConnector';
 import { instalarReportes } from '../services/browserReport';
@@ -71,8 +72,12 @@ function HomeLiveScreen() {
 
 export default function HomePage() {
   return (
-    <HotelProvider>
-      <HomeLiveScreen />
-    </HotelProvider>
+    // El boundary envuelve TODO: si un personaje o un dato restaurado revienta
+    // el render, se aisla el fallo en vez de dejar la pantalla generica de Next.
+    <ErrorBoundary etiqueta="hotel">
+      <HotelProvider>
+        <HomeLiveScreen />
+      </HotelProvider>
+    </ErrorBoundary>
   );
 }

@@ -28,7 +28,9 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
   demolitionState,
 }) => {
   // Exactly 4 rooms on this floor, sorted by number (e.g. 101, 102, 103, 104)
-  const floorRooms = floor.rooms
+  // `floor.rooms` puede faltar en un estado restaurado viejo: sin el fallback,
+  // el .map() tumba la app entera.
+  const floorRooms = (Array.isArray(floor.rooms) ? floor.rooms : [])
     .map((id) => rooms[id])
     .filter(Boolean)
     .sort((a, b) => a.number - b.number);
@@ -165,22 +167,40 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
         </div>
       )}
 
-      {/* SINGLE ROW OF 4 ROOMS: EXACTLY 4 ROOMS PER ROW! */}
-      <div className="grid grid-cols-4 gap-1.5 w-full">
+      {/* SINGLE ROW OF 4 ROOMS.
+          La fila usa columnas reales para que una habitacion expandida (el
+          superpoder de 500) ocupe varias de una vez, en lugar de dibujarse como
+          recuadros sueltos. El personaje vive en SU bloque, asi que no se
+          duplica. */}
+      <div
+        className="grid gap-1.5 w-full"
+        style={{ gridTemplateColumns: `repeat(4, minmax(0, 1fr))` }}
+      >
         {floorRooms.map((room) => {
           const occupant = room.occupantId ? residents[room.occupantId] : undefined;
           // Character must ONLY be rendered inside room if their current location is physically 'room'
+          // La habitacion PRINCIPAL de un residente expandido se dibuja como un
+          // solo bloque ancho; las absorbidas quedan como parte de el y no se
+          // renderizan por separado.
+          const esAbsorbida =
+            !!occupant && !!occupant.expandedRoomIds?.includes(room.id);
+          if (esAbsorbida) return null;
+
+          const span = occupant?.roomSpan && occupant.roomSpan > 1 ? Math.min(4, occupant.roomSpan) : 1;
           const roomResident = occupant && occupant.location === 'room' ? occupant : undefined;
+
           return (
-            <RoomRenderer
-              key={room.id}
-              room={room}
-              resident={roomResident}
-              timeOfDay={timeOfDay}
-              globalEvent={globalEvent}
-              isFocused={focusedRoomNumber === room.number}
-              isFalling={isThisFloorFalling}
-            />
+            <div key={room.id} style={{ gridColumn: `span ${span} / span ${span}` }}>
+              <RoomRenderer
+                room={room}
+                resident={roomResident}
+                timeOfDay={timeOfDay}
+                globalEvent={globalEvent}
+                isFocused={focusedRoomNumber === room.number}
+                isFalling={isThisFloorFalling}
+                span={span}
+              />
+            </div>
           );
         })}
       </div>

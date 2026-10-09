@@ -4,11 +4,13 @@ import React, { useState, useSyncExternalStore, useEffect } from 'react';
 import Link from 'next/link';
 import { useHotel, HotelProvider } from '../../context/HotelContext';
 import { PersonalityType, GlobalEventType, TimeOfDay, EntryRulesConfig } from '../../types/hotel';
+import { APP_VERSION, APP_VERSION_NOTES } from '../../version';
 import { DEFAULT_GIFT_RULES } from '../../services/tiktokProvider';
 import { hotelBroadcast } from '../../services/broadcastSync';
 import { tiktokLiveConnector, TikTokLiveStatus } from '../../services/tiktokLiveConnector';
 import { TikTokLiveFrame } from '../../components/hotel/TikTokLiveFrame';
 import { TikTokLogPanel } from '../../components/admin/TikTokLogPanel';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { instalarReportes } from '../../services/browserReport';
 import { HotelView } from '../../components/hotel/HotelView';
 
@@ -653,6 +655,22 @@ const AdminPanelContent: React.FC = () => {
       {activeAdminTab === 'log' && (
         <div className="max-w-4xl mx-auto animate-in fade-in duration-200">
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            {/* Version desplegada. Si el panel y la app principal no coinciden,
+                casi siempre es que el navegador tiene un bundle viejo en cache:
+                recargar en duro (Ctrl+Shift+R) y volver a mirar aqui. */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <span className="text-[10px] bg-black/50 text-slate-300 px-1.5 py-0.5 rounded border border-slate-700 font-mono">
+                app v{APP_VERSION}
+              </span>
+              {APP_VERSION_NOTES.map((n) => (
+                <span
+                  key={n}
+                  className="text-[10px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700"
+                >
+                  {n}
+                </span>
+              ))}
+            </div>
             <div className="border-b border-slate-800 pb-3 mb-4">
               <h2 className="text-sm font-black text-amber-400 uppercase tracking-wide flex items-center gap-2">
                 <span>📋</span>
@@ -1120,8 +1138,10 @@ const AdminPanelContent: React.FC = () => {
 
 export default function AdminPage() {
   return (
-    <HotelProvider>
-      <AdminPanelContent />
-    </HotelProvider>
+    <ErrorBoundary etiqueta="admin">
+      <HotelProvider>
+        <AdminPanelContent />
+      </HotelProvider>
+    </ErrorBoundary>
   );
 }

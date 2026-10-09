@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { COMANDOS_PODER } from '../../services/powerCommands';
 
 const TICKER_COMMANDS = [
   { icon: '🏨', cmd: '!entrar', desc: 'Consigue tu habitación gratis comentando en el LIVE' },
@@ -17,6 +18,22 @@ const TICKER_COMMANDS = [
 ];
 
 export const CommandsAnnouncementBar: React.FC = () => {
+  // Los comandos de PODER van en este mismo ticker, no en una etiqueta aparte:
+  // aquella ocupaba mucho ancho y le robaba espacio al hotel. Se sacan de
+  // COMANDOS_PODER (la misma fuente que usa el chat para reconocerlos), asi que
+  // anadir un poder no obliga a tocar este componente.
+  const comandosPoder = COMANDOS_PODER.map((p) => ({
+    icon: p.icono,
+    cmd: p.cmd,
+    desc: `${p.nombre} · se lanza sobre otro residente (${p.likes}❤️)`,
+    poder: true,
+  }));
+
+  const todos: { icon: string; cmd: string; desc: string; poder?: boolean }[] = [
+    ...TICKER_COMMANDS,
+    ...comandosPoder,
+  ];
+
   return (
     <div className="w-full bg-slate-950/95 border-b border-amber-500/50 py-1 flex items-center overflow-hidden select-none shadow-md">
       {/* Static Left Badge */}
@@ -29,16 +46,32 @@ export const CommandsAnnouncementBar: React.FC = () => {
       <div className="relative flex-1 overflow-hidden">
         <div className="animate-marquee flex items-center gap-6 whitespace-nowrap">
           {/* Render commands list twice for seamless continuous loop */}
-          {[...TICKER_COMMANDS, ...TICKER_COMMANDS].map((item, idx) => (
+          {[...todos, ...todos].map((item, idx) => (
             <div key={idx} className="flex items-center gap-1.5 shrink-0">
               <span className="text-xs">{item.icon}</span>
-              <span className="text-[10px] font-mono font-black text-amber-300 bg-slate-900 px-1 rounded border border-slate-700">
+              <span
+                className={`text-[10px] font-mono font-black px-1 rounded border ${
+                  item.poder
+                    ? 'text-purple-200 bg-purple-950/80 border-purple-500/60'
+                    : 'text-amber-300 bg-slate-900 border-slate-700'
+                }`}
+              >
                 {item.cmd}
               </span>
-              <span className="text-[9px] text-slate-200 font-medium">
+              <span
+                className={`text-[9px] font-medium ${
+                  item.poder ? 'text-purple-200/90' : 'text-slate-200'
+                }`}
+              >
                 {item.desc}
               </span>
-              <span className="text-amber-500/40 text-[10px] ml-2">✦</span>
+              <span
+                className={`text-[10px] ml-2 ${
+                  item.poder ? 'text-purple-400/60' : 'text-amber-500/40'
+                }`}
+              >
+                {item.poder ? '⚡' : '✦'}
+              </span>
             </div>
           ))}
         </div>

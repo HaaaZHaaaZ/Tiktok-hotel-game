@@ -48,6 +48,7 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
     location: 'reception',
     coordX: 50,
     direction: 'left',
+    likes: 0,
   };
 
   const isBlackout = globalEvent === 'APAGON';
@@ -79,6 +80,7 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
     location: 'reception',
     coordX: 50,
     direction,
+    likes: 0,
   });
 
   return (

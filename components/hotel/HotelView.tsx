@@ -8,10 +8,26 @@ import { GroundFloorRenderer } from './GroundFloorRenderer';
 import { PenthouseRenderer } from './PenthouseRenderer';
 import { GlobalEventOverlay } from './GlobalEventOverlay';
 import { WeatherOverlay } from './WeatherOverlay';
+import { EvictionOverlay } from './EvictionOverlay';
+import { PowerCastOverlay } from './PowerCastOverlay';
 
 export const HotelView: React.FC = () => {
-  const { state, resetCamera } = useHotel();
-  const { floors, rooms, residents, timeOfDay, weather, globalEvent, camera, vipPenthouseResidents } = state;
+  const { state, resetCamera, finalizeEviction, finalizePowerCast } = useHotel();
+  const { floors, rooms, residents, timeOfDay, weather, camera, vipPenthouseResidents } = state;
+  // `globalEvent` puede venir ausente de un estado restaurado antiguo y el
+  // render lo lee como `globalEvent.type`: se normaliza aqui para que un estado
+  // incompleto no tumbe la app entera.
+  const globalEvent = state.globalEvent || {
+    type: 'NONE' as const,
+    title: '',
+    message: '',
+    durationMs: 0,
+    startedAt: 0,
+  };
+
+  // Residentes en plena caida por desalojo. Se dibujan en un overlay sobre todo
+  // el edificio: dentro de la habitacion el recuadro los recortaria.
+  const evictingResidents = Object.values(residents).filter((r) => r.evicting);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const buildingRef = useRef<HTMLDivElement>(null);
@@ -336,6 +352,28 @@ export const HotelView: React.FC = () => {
               <span>🚕</span>
             </div>
           </div>
+
+          {/* 4. Desalojos: los personajes expulsados caen por la fachada hasta
+              la calle. Va al final para dibujarse por encima de todo el edificio.
+              Se le pasa la escala del autoFit para contra-escalar el personaje:
+              el overlay vive DENTRO del div escalado, asi que sin esto el que
+              cae se veria encogido como el resto del edificio. */}
+          <EvictionOverlay
+            evictingResidents={evictingResidents}
+            buildingRef={buildingRef}
+            onFallComplete={finalizeEviction}
+            inverseScale={1 / (autoFitScale || 1)}
+          />
+
+          {/* 5. Poderes: el rayo de energia que viaja de quien lo gano hasta el
+              residente sobre el que se lanza. Encima de todo para que el origen
+              y el destino se lean siempre. */}
+          <PowerCastOverlay
+            casts={state.powerCasts || []}
+            buildingRef={buildingRef}
+            onCastComplete={finalizePowerCast}
+            inverseScale={1 / (autoFitScale || 1)}
+          />
         </div>
       </div>
 

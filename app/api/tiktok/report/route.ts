@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tiktokLogger } from '../../../../services/tiktok/logger';
+import { logError, logInfo, logLine, logWarn, clear, all, count as logCount } from '../../../../services/tiktok/logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,9 +21,10 @@ export const dynamic = 'force-dynamic';
  *   GET /api/tiktok/report?evento=entrada&usuario=@fulano
  */
 export async function POST(req: NextRequest) {
-  // Lectura defensiva del cuerpo. req.json()/req.text() pueden lanzar si el
-  // cuerpo ya fue consumido o esta corrupto, y como el reporte es solo
-  // diagnostico NUNCA debe romper nada: se envuelve todo y se sigue.
+
+  // Lectura defensiva del cuerpo. req.json() puede lanzar si el cuerpo ya fue
+  // consumido o esta corrupto, y como el reporte es solo diagnostico NUNCA debe
+  // romper nada: se envuelve todo y se sigue.
   let body: any = {};
   try {
     body = await req.json();
@@ -37,20 +38,24 @@ export async function POST(req: NextRequest) {
   const msg = (body?.msg || '').toString().slice(0, 500);
   const data = body?.data && typeof body.data === 'object' ? body.data : undefined;
 
+  let logged = 0;
+  let logError: string | undefined;
   try {
-    const registrar =
-      nivel === 'error'
-        ? tiktokLogger.error
-        : nivel === 'warn'
-          ? tiktokLogger.warn
-          : tiktokLogger.info;
-    registrar(tag, msg || '(sin mensaje)', data);
-  } catch {
-    // Si el logger falla, se responde igual: reportar nunca debe ser un problema.
+    const nivel =
+      body?.nivel === 'error' ? 'ERROR' : body?.nivel === 'warn' ? 'WARN' : 'INFO';
+    logLine(nivel, tag, msg || '(sin mensaje)', data);
+    logged = logCount();
+  } catch (e) {
+    // Antes el error se tragaba en silencio: si el logger reventaba, la
+    // respuesta seguia diciendo success:true y no habia forma de enterarse.
+    logError = e instanceof Error ? e.message : String(e);
   }
 
   // Responder siempre 200: un fallo al reportar nunca debe romper la app.
-  return NextResponse.json({ success: true });
+  // `logged` y `logError` permiten distinguir desde fuera "no llego nada" de
+  // "llego pero el logger fallo", que es justo lo que hacia imposible
+  // diagnosticar el log vacio.
+  return NextResponse.json({ success: true, logged, logError });
 }
 
 export async function GET(req: NextRequest) {
@@ -60,7 +65,7 @@ export async function GET(req: NextRequest) {
   const detalle = q.get('detalle') || '';
 
   if (evento) {
-    tiktokLogger.info('navegador', evento, {
+    logInfo('navegador', evento, {
       usuario: usuario || undefined,
       detalle: detalle || undefined,
     });

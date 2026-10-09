@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { APP_VERSION, APP_VERSION_NOTES } from '../../version';
 import { useHotel } from '../../context/HotelContext';
 import { CommandsAnnouncementBar } from './CommandsAnnouncementBar';
 
@@ -41,6 +42,16 @@ export const HotelHud: React.FC = () => {
               TikTok Hotel
             </span>
           </div>
+
+          {/* Version visible: con el despliegue por archivo el navegador puede
+              quedarse con un bundle viejo en cache. Con la version en pantalla
+              se comprueba de un vistazo si lo que se prueba es lo desplegado. */}
+          <span
+            title={`Cambios: ${APP_VERSION_NOTES.join(' · ')}`}
+            className="text-[10px] bg-black/50 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800 font-mono cursor-help"
+          >
+            v{APP_VERSION}
+          </span>
 
           {/* Building Floors Indicator Badge (Broadcast display only) */}
           <span className="text-[10px] bg-slate-800/90 text-amber-300 px-2 py-0.5 rounded border border-slate-700 font-bold font-mono">

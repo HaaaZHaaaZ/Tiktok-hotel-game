@@ -19,7 +19,7 @@ export type HotelBroadcastMessage =
   | {
       type: 'TIKTOK_EVENT';
       payload: {
-        eventType: 'comment' | 'gift' | 'like' | 'share' | 'follow';
+        eventType: 'comment' | 'gift' | 'like' | 'share' | 'follow' | 'join';
         username: string;
         comment?: string;
         giftId?: string;

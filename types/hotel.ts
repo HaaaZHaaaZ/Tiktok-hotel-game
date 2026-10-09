@@ -16,6 +16,63 @@ export type RoomLevel = 'NORMAL' | 'MEJORADA' | 'PREMIUM' | 'VIP';
 
 export type RoomStatus = 'VACIA' | 'RESERVADA' | 'OCUPADA' | 'VIP' | 'ABANDONADA';
 
+/**
+ * Superpoderes que se ganan acumulando likes (uno cada 100).
+ *
+ * Se asignan en orden: a los 100 likes el primero, a los 200 el segundo, etc.
+ * Son acumulativos y no se pierden mientras el residente siga dentro.
+ */
+export type SuperpowerId =
+  | 'regen'        // 100 likes: regenera estadía sola
+  | 'escudo'       // 200: los likes valen el doble
+  | 'imán'         // 300: atrae regalos
+  | 'aura'         // 400: contagia estabilidad a los vecinos
+  | 'habitacion_doble'; // 500: ocupa DOS habitaciones y echa al vecino
+
+export interface SuperpowerDefinition {
+  id: SuperpowerId;
+  /** Likes necesarios para desbloquearlo. */
+  likesRequired: number;
+  name: string;
+  icon: string;
+  description: string;
+  /** Color del rayo de energia al lanzarse sobre otro residente. */
+  beamColor: string;
+}
+
+/**
+ * Un poder lanzado sobre otro residente.
+ *
+ * Se usa para dibujar la animacion: el rayo sale del `from` (quien lo gano) y
+ * viaja hasta el `to` (a quien le toco). Ambos son ids de residente, asi que el
+ * render mide sus posiciones reales en el DOM.
+ */
+export interface PowerCast {
+  id: string;
+  power: SuperpowerId;
+  fromId: string;
+  fromName: string;
+  toId: string;
+  toName: string;
+  /** Momento del lanzamiento; el overlay lo usa para limpiarse solo. */
+  startedAt: number;
+  /** Duracion de la animacion en ms. */
+  durationMs: number;
+}
+
+/**
+ * Escalado de recompensas de estadía. Cada accion suma SEGUNDOS a la estadía
+ * del residente (solo si el hotel usa tiempo limitado).
+ */
+export const STAY_REWARDS = {
+  /** Segundos por like. */
+  likeSeconds: 0.3,
+  /** Segundos por regalo (crece con el nivel del regalo). */
+  giftSecondsBase: 1,
+  /** Segundos por compartir el live. */
+  shareSeconds: 0.5,
+} as const;
+
 export type ActionType =
   | 'idle'
   | 'walking'
@@ -66,12 +123,56 @@ export interface Resident {
   actionTimer?: number;
   targetRoomId?: string; // e.g. for knocking neighbor
   speechBubble?: SpeechBubble | null;
+  /**
+   * Likes que este usuario ha dado al live desde que esta en el hotel.
+   * Se muestra como contador dentro de su habitacion y vuelve a 0 al irse.
+   */
+  likes: number;
+  /**
+   * Superpoderes ganados por acumular likes. Se otorga uno cada 100 likes.
+   */
+  superpowers?: SuperpowerId[];
+  /**
+   * Estadía restante en SEGUNDOS (no en % de estabilidad).
+   *
+   * Antes el tiempo de vida solo existia como `stability` 100->0, asi que
+   * "sumar 0.3s por un like" era imposible de expresar: habia que convertir
+   * segundos a puntos de estabilidad con una regla de tres que dependia del
+   * total configurado. Con el tiempo explicito, cada recompensa suma segundos
+   * directamente y la barra de estabilidad se DERIVA de el.
+   *
+   * Solo tiene sentido cuando `residentStaySeconds > 0` (0 = permanente).
+   * `null` = hotel permanente (sin reloj).
+   */
+  stayRemainingSec?: number | null;
+  /** Total con el que entro, para calcular el porcentaje de la barra. */
+  stayTotalSec?: number;
+  /**
+   * Habitaciones que ocupa por el superpoder de expansion, ademas de la suya.
+   *
+   * El residente puede absorber las contiguas hasta juntar las 4 del piso
+   * (un piso entero). Se guarda la lista completa de ids para poder liberarlas
+   * todas al irse.
+   */
+  expandedRoomIds?: string[];
+  /**
+   * Su habitacion PRINCIPAL ocupa varias columnas en la fila del piso.
+   * Es lo que hace que se dibuje como un solo bloque ancho en vez de varias
+   * habitaciones separadas. 1 = tamano normal.
+   */
+  roomSpan?: number;
   // Position within floor/room coordinates
   location: 'room' | 'corridor' | 'elevator' | 'reception' | 'penthouse';
   coordX: number; // 0 to 100% relative within location
   direction: 'left' | 'right';
   isEntering?: boolean;
   isLeaving?: boolean;
+  /**
+   * Desalojo en curso: el personaje sigue en el mapa (y en su habitacion)
+   * mientras dura la animacion de caida. Al terminar se borra del todo.
+   * `startedAt` permite que la animacion arranque una sola vez.
+   */
+  evicting?: { startedAt: number } | null;
 }
 
 export interface Room {
@@ -161,7 +262,56 @@ export interface EntryRulesConfig {
   autoApprove: boolean;
   welcomeMessage: string;
   residentStaySeconds: number; // 0 for infinite/permanent, or any custom seconds (e.g. 30, 60, 120, 300)
+  /** Superpoderes por likes: activado por defecto. */
+  superpowersEnabled?: boolean;
 }
+
+/**
+ * Los cinco superpoderes, en orden de desbloqueo.
+ * El de 500 es el mas visible: expande la habitacion a dos.
+ */
+export const SUPERPOWERS: SuperpowerDefinition[] = [
+  {
+    id: 'regen',
+    likesRequired: 100,
+    name: 'Regeneración',
+    icon: '💚',
+    description: 'Su estadía se recupera sola con el tiempo',
+    beamColor: '#22C55E',
+  },
+  {
+    id: 'escudo',
+    likesRequired: 200,
+    name: 'Escudo',
+    icon: '🛡️',
+    description: 'Sus likes valen el doble de estadía',
+    beamColor: '#3B82F6',
+  },
+  {
+    id: 'imán',
+    likesRequired: 300,
+    name: 'Imán de Regalos',
+    icon: '🧲',
+    description: 'Atrae regalos: cada regalo suma el triple',
+    beamColor: '#A855F7',
+  },
+  {
+    id: 'aura',
+    likesRequired: 400,
+    name: 'Aura',
+    icon: '✨',
+    description: 'Contagia estadía a los vecinos de su piso',
+    beamColor: '#FACC15',
+  },
+  {
+    id: 'habitacion_doble',
+    likesRequired: 500,
+    name: 'Habitación Doble',
+    icon: '🏰',
+    description: '+1 habitación cada 500 likes (máx. 4 = piso entero)',
+    beamColor: '#F59E0B',
+  },
+];
 
 export interface QueueResident {
   id: string;
@@ -213,4 +363,9 @@ export interface HotelState {
     peakResidents: number;
   };
   notifications: LiveNotification[];
+  /**
+   * Poderes en vuelo (animacion de origen -> destino). Se limpian solos al
+   * expirar; el overlay los dibuja entre residentes.
+   */
+  powerCasts: PowerCast[];
 }

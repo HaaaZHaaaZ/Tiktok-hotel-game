@@ -297,7 +297,7 @@ class TikTokLiveConnectorService {
   }
 
   public emitEvent(event: {
-    eventType: 'comment' | 'gift' | 'like' | 'share' | 'follow';
+    eventType: 'comment' | 'gift' | 'like' | 'share' | 'follow' | 'join';
     username: string;
     comment?: string;
     giftId?: string;
