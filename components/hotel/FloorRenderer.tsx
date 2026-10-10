@@ -182,8 +182,13 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
           // La habitacion PRINCIPAL de un residente expandido se dibuja como un
           // solo bloque ancho; las absorbidas quedan como parte de el y no se
           // renderizan por separado.
+          //
+          // La marca vive en la HABITACION (`absorbedBy`), no en el residente:
+          // cuando se desaloja al vecino, su `occupantId` se limpia, y mirando
+          // solo al residente la habitacion reaparecia como recuadro suelto en
+          // una fila nueva dentro del piso (habia 5+ habitaciones por piso).
           const esAbsorbida =
-            !!occupant && !!occupant.expandedRoomIds?.includes(room.id);
+            !!room.absorbedBy || (!!occupant && !!occupant.expandedRoomIds?.includes(room.id));
           if (esAbsorbida) return null;
 
           const span = occupant?.roomSpan && occupant.roomSpan > 1 ? Math.min(4, occupant.roomSpan) : 1;

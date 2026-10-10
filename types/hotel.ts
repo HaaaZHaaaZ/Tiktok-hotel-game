@@ -173,6 +173,13 @@ export interface Resident {
    * `startedAt` permite que la animacion arranque una sola vez.
    */
   evicting?: { startedAt: number } | null;
+  /**
+   * Impacto de un poder recien recibido: el personaje y su habitacion tiemblan.
+   *
+   * Se guarda la marca de tiempo para poder expirar la animacion por si sola
+   * (no hace falta un temporizador que la borre). `at` es `Date.now()`.
+   */
+  powerHit?: { power: SuperpowerId; at: number } | null;
 }
 
 export interface Room {
@@ -189,6 +196,15 @@ export interface Room {
   points: number;
   lightOn: boolean;
   lastInteractionAt: number;
+  /**
+   * Id del residente que ABSORBIO esta habitacion con el superpoder de suite.
+   *
+   * Vive en la habitacion (no en el residente) a proposito: es la marca de que
+   * esta habitacion forma parte del bloque ancho de otro. Asi el render la
+   * oculta aunque su `occupantId` se haya limpiado, que es justo lo que hacia
+   * que reapareciera como una habitacion suelta en una fila nueva del piso.
+   */
+  absorbedBy?: string | null;
 }
 
 export interface Floor {

@@ -90,6 +90,13 @@ const HOTEL_STORAGE_KEY = 'tiktok_hotel_active_state_v2';
 const BUBBLE_MS = 2800;
 
 /**
+ * Cuanto dura el aviso de impacto de un poder sobre el receptor (el temblor del
+ * personaje y de su habitacion). Debe coincidir con `.animate-room-shock` y
+ * `.animate-power-shock` en globals.css.
+ */
+const POWER_HIT_MS = 1400;
+
+/**
  * Umbrales de expansion de la habitacion: +1 habitacion por cada 500 likes,
  * con tope de 4 (un piso entero).
  *
@@ -199,6 +206,13 @@ function sanitizeRestoredState(parsed: any): any {
       roomSpan: Number.isFinite(Number(raw.roomSpan)) && Number(raw.roomSpan) > 0
         ? Number(raw.roomSpan)
         : 1,
+      // El impacto de poder es un aviso momentaneo: no debe sobrevivir a una
+      // recarga (el temporizador que lo limpia vive en memoria).
+      powerHit:
+        raw.powerHit && typeof raw.powerHit === 'object' &&
+        Date.now() - (Number(raw.powerHit.at) || 0) < POWER_HIT_MS
+          ? raw.powerHit
+          : null,
       energy: Number.isFinite(Number(raw.energy)) ? Number(raw.energy) : 80,
       stability: Number.isFinite(Number(raw.stability)) ? Number(raw.stability) : 100,
       vipLevel: Number.isFinite(Number(raw.vipLevel)) ? Number(raw.vipLevel) : 0,
@@ -242,11 +256,18 @@ function sanitizeRestoredState(parsed: any): any {
     if (!raw || typeof raw !== 'object') continue;
     const ocupanteValido =
       raw.occupantId && Object.prototype.hasOwnProperty.call(residents, raw.occupantId);
+    // `absorbedBy` solo se conserva mientras el residente que absorbio siga en
+    // el mapa: es quien dibuja el bloque ancho que la tapa. Si el absorbente ya
+    // no esta, se limpia para que la habitacion vuelva a ser normal (si no,
+    // quedaria invisible para siempre).
+    const absorbenteValido =
+      raw.absorbedBy && Object.prototype.hasOwnProperty.call(residents, raw.absorbedBy);
     rooms[id] = {
       ...raw,
       id,
       occupantId: ocupanteValido ? raw.occupantId : null,
       status: ocupanteValido ? raw.status || 'OCUPADA' : 'VACIA',
+      absorbedBy: absorbenteValido ? raw.absorbedBy : null,
     };
   }
 
@@ -1263,6 +1284,10 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         afectado.popularity = dest.popularity + 50;
       }
 
+      // Marca de impacto: el receptor tiembla (personaje y habitacion) mientras
+      // llega el rayo. Se limpia sola al expirar, sin necesidad de otro timer.
+      afectado.powerHit = { power: powerId, at: Date.now() };
+
       const cast: PowerCast = {
         id: `cast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         power: powerId,
@@ -1702,12 +1727,26 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     audioEngine.playEvict();
     audioEngine.playStumble();
 
+    // Habitaciones que le fueron ABSORBIDAS a este residente por la suite de
+    // otro. Al desalojarlo NO se pueden liberar: ya tienen nuevo dueno (quien
+    // absorbio), y limpiarlas hacia que reaparecieran como habitaciones sueltas
+    // en una fila nueva dentro del piso.
+    const absorbidasPorOtro = new Set(
+      Object.values(s.residents)
+        .filter((r) => r.id !== residentId && r.expandedRoomIds?.includes(res.roomId))
+        .flatMap((r) => r.expandedRoomIds || [])
+    );
+
     // Mark resident as leaving
     setState((prev) => {
       const updatedRooms = { ...prev.rooms };
-      if (updatedRooms[res.roomId]) {
+      const room = updatedRooms[res.roomId];
+      // Solo se libera si sigue siendo SU habitacion principal: si otro la
+      // absorbio, ya no es suya y vaciarla rompe la suite.
+      const suyaTodavia = room && room.occupantId === residentId && !absorbidasPorOtro.has(res.roomId);
+      if (room && suyaTodavia) {
         updatedRooms[res.roomId] = {
-          ...updatedRooms[res.roomId],
+          ...room,
           status: 'VACIA',
           occupantId: null,
         };
@@ -1761,7 +1800,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const updatedRooms = { ...prev.rooms };
       for (const [id, room] of Object.entries(updatedRooms)) {
         if (room.occupantId === residentId) {
-          updatedRooms[id] = { ...room, status: 'VACIA', occupantId: null };
+          updatedRooms[id] = { ...room, status: 'VACIA', occupantId: null, absorbedBy: null };
         }
       }
 
@@ -2092,6 +2131,12 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               (Number(res.speechBubble.durationMs) || 3000)
               ? null
               : res.speechBubble ?? null,
+          // Misma logica para el impacto de poder: es un aviso temporal, no un
+          // estado permanente. Se limpia solo al pasar su ventana.
+          powerHit:
+            res.powerHit && Date.now() - (Number(res.powerHit.at) || 0) >= POWER_HIT_MS
+              ? null
+              : res.powerHit ?? null,
         };
       });
 
@@ -2270,9 +2315,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!actual) return prev;
 
       const rooms = { ...prev.rooms };
-      // Las recien absorbidas pasan a ser suyas.
+      // Las recien absorbidas pasan a ser suyas y quedan marcadas con quien las
+      // absorbio, para que el render las oculte aunque pierdan el occupantId.
       for (const id of idsNuevas) {
-        rooms[id] = { ...rooms[id], status: 'OCUPADA', occupantId: residentId };
+        rooms[id] = {
+          ...rooms[id],
+          status: 'OCUPADA',
+          occupantId: residentId,
+          absorbedBy: residentId,
+        };
       }
       // Su habitacion principal se ensancha tantas columnas como junte.
       rooms[res.roomId] = {

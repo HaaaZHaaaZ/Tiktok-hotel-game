@@ -1,8 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Room, Resident, TimeOfDay, GlobalEventType } from '../../types/hotel';
+import { Room, Resident, TimeOfDay, GlobalEventType, SUPERPOWERS } from '../../types/hotel';
 import { CharacterRenderer } from './CharacterRenderer';
+
+/** Debe coincidir con la duracion de `.animate-room-shock` en globals.css. */
+const POWER_HIT_MS = 1400;
 
 interface RoomRendererProps {
   room: Room;
@@ -65,6 +68,14 @@ export const RoomRenderer: React.FC<RoomRendererProps> = ({
 
   const isBlackout = globalEvent === 'APAGON';
 
+  // Impacto de poder recien recibido por el ocupante: la habitacion entera
+  // tiembla y se ilumina con el color del poder.
+  const hit = resident?.powerHit;
+  const isPowerHit = !!hit && Date.now() - (hit.at || 0) < POWER_HIT_MS;
+  const hitColor = isPowerHit
+    ? SUPERPOWERS.find((p) => p.id === hit!.power)?.beamColor || '#FACC15'
+    : null;
+
   // Compute character X position across the open room floor (no dividing bars)
   let targetXPercent = resident?.coordX || 48;
   if (isGaming) targetXPercent = 26; // Sitting right by the PC desk
@@ -75,11 +86,23 @@ export const RoomRenderer: React.FC<RoomRendererProps> = ({
       className={`relative w-full h-[155px] rounded-lg border-2 flex flex-col justify-between transition-all duration-300 shadow-sm ${wallpaperBg} ${
         isFocused ? 'ring-2 ring-yellow-400 scale-[1.01] z-20 shadow-md' : ''
       } ${isFalling ? 'animate-shake' : ''} ${
+        isPowerHit ? 'animate-room-shock z-30' : ''
+      } ${
         esHabitacionDoble
           ? 'ring-2 ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.55)]'
           : ''
       }`}
     >
+      {/* Halo de color del poder recibido: recorre la habitacion golpeada. */}
+      {isPowerHit && hitColor && (
+        <div
+          className="absolute inset-0 z-45 rounded-lg pointer-events-none animate-room-hit-glow"
+          style={{
+            background: `radial-gradient(circle at 50% 50%, ${hitColor}66 0%, transparent 70%)`,
+            boxShadow: `inset 0 0 22px 6px ${hitColor}aa`,
+          }}
+        />
+      )}
       {/* Marca de suite expandida: esta habitacion ocupa varias columnas. */}
       {esHabitacionDoble && (
         <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-45 pointer-events-none bg-amber-500 text-slate-950 font-black text-[7px] px-1.5 py-[1px] rounded-full border border-amber-200 shadow-lg animate-pulse whitespace-nowrap">

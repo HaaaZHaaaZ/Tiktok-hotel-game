@@ -23,6 +23,9 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
   receptionAttending = null,
 }) => {
   // NPC Receptionist: "Don Pepe" (friendly concierge/clerk)
+  // Cuando hay más de 5 personas en fila, Don Pepe se estresa: ojos rojos
+  // temblorosos, boca ondulada y gotas de sudor.
+  const isDonPepeStressed = entryQueue.length > 5;
   const receptionistNPC: Resident = {
     id: 'npc_receptionist',
     username: 'DonPepe_Recepción',
@@ -34,7 +37,7 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
       outfitStyle: 'suit',
       outfitColor: '#C0392B',
       accessory: 'glasses',
-      eyeType: 'happy',
+      eyeType: isDonPepeStressed ? 'surprised' : 'happy',
     },
     personality: 'elegante',
     roomId: '',
@@ -44,7 +47,7 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
     popularity: 500,
     points: 1000,
     vipLevel: 0,
-    currentAction: 'idle',
+    currentAction: isDonPepeStressed ? 'worried' : 'idle',
     location: 'reception',
     coordX: 50,
     direction: 'left',
@@ -100,9 +103,9 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
             PLANTA BAJA — RECEPCIÓN & LOBBY DE DON PEPE
           </span>
         </div>
-        <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-950 bg-amber-400 px-2 py-0.5 rounded shadow-xs">
+        <div className={`flex items-center gap-1.5 text-[9px] font-bold px-2 py-0.5 rounded shadow-xs ${entryQueue.length > 5 ? 'bg-red-500 text-white animate-pulse' : 'bg-amber-400 text-slate-950'}`}>
           <span>FILA: {entryQueue.length} ESPERANDO</span>
-          {entryQueue.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping" />}
+          {entryQueue.length > 0 && <span className={`w-1.5 h-1.5 rounded-full animate-ping ${entryQueue.length > 5 ? 'bg-white' : 'bg-red-600'}`} />}
         </div>
       </div>
 
@@ -171,8 +174,20 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
 
           <div className="flex items-end gap-1">
             {/* Don Pepe the Clerk */}
-            <div className="scale-85 origin-bottom">
+            <div className="relative scale-85 origin-bottom">
               <CharacterRenderer resident={receptionistNPC} showName={true} />
+              {/* Gotas de sudor animadas cuando hay más de 5 en fila */}
+              {isDonPepeStressed && (
+                <>
+                  <span className="absolute -top-1 -right-1 text-[10px] animate-bounce" style={{ animationDuration: '0.6s' }}>💦</span>
+                  <span className="absolute top-0 -right-2 text-[8px] animate-bounce" style={{ animationDuration: '0.8s', animationDelay: '0.2s' }}>💦</span>
+                  <span className="absolute -top-2 left-0 text-[7px] animate-bounce" style={{ animationDuration: '0.7s', animationDelay: '0.1s' }}>💦</span>
+                  {/* Badge de PRISA */}
+                  <span className="absolute -top-5 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full shadow-lg animate-pulse whitespace-nowrap z-50">
+                    ¡PRISA!
+                  </span>
+                </>
+              )}
             </div>
 
             {/* Reception Desk */}

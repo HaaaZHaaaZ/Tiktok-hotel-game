@@ -9,6 +9,9 @@ interface CharacterRendererProps {
   showName?: boolean;
 }
 
+/** Debe coincidir con la duracion de `.animate-power-shock` en globals.css. */
+const POWER_HIT_MS = 1400;
+
 export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   resident,
   scale = 1,
@@ -60,9 +63,17 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   const isLow = stability <= 50 && !isExpiring && !isCritical;
   const isStressed = isCritical || isExpiring || currentAction === 'worried';
 
+  // Impacto de poder recien recibido: tiembla con fuerza unos instantes.
+  // La marca expira sola por tiempo, asi que no hace falta limpiarla.
+  const hit = resident.powerHit;
+  const isPowerHit = !!hit && Date.now() - (hit.at || 0) < POWER_HIT_MS;
+
   // Animation classes based on action and stress
   let animClass = 'transition-transform duration-300';
-  if (isCritical) {
+  if (isPowerHit) {
+    // Temblor violento: manda sobre cualquier otra animacion.
+    animClass += ' animate-power-shock';
+  } else if (isCritical) {
     animClass += ' animate-[shake_0.25s_ease-in-out_infinite]';
   } else if (isExpiring) {
     animClass += ' animate-[wiggle_0.4s_ease-in-out_infinite]';
@@ -106,6 +117,15 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
                 </span>
               );
             })}
+          </div>
+        )}
+
+        {/* Impacto de poder: aviso sobre el receptor mientras tiembla. */}
+        {isPowerHit && (
+          <div className="flex items-center gap-1 bg-purple-700 text-white font-black text-[8px] px-1.5 py-0.5 rounded-full shadow-xl border border-purple-300 animate-bounce mb-0.5">
+            <span>⚡</span>
+            <span>¡PODER RECIBIDO!</span>
+            <span>💥</span>
           </div>
         )}
 

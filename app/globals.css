@@ -197,6 +197,20 @@
   animation: power-travel 1.1s cubic-bezier(0.4, 0, 0.7, 1) forwards;
 }
 
+/* Rastro de energia que une emisor y receptor. `--angulo` lo fija el overlay
+   segun la posicion real de los dos personajes. Se dibuja rapido y se desvanece
+   mientras el proyectil viaja. */
+@keyframes power-trace {
+  0%   { opacity: 0; transform: rotate(var(--angulo)) scaleX(0.2); }
+  15%  { opacity: 1; transform: rotate(var(--angulo)) scaleX(1); }
+  70%  { opacity: 0.9; transform: rotate(var(--angulo)) scaleX(1); }
+  100% { opacity: 0; transform: rotate(var(--angulo)) scaleX(1); }
+}
+
+.animate-power-trace {
+  animation: power-trace 1.1s ease-out forwards;
+}
+
 /* Pulso de carga en el emisor: se agranda antes de disparar. */
 @keyframes power-charge {
   0%   { transform: scale(0.6); opacity: 0.5; }
@@ -228,6 +242,52 @@
 
 .animate-power-receive {
   animation: power-receive 0.6s ease-in-out 2;
+}
+
+/* Temblor violento del PERSONAJE al recibir un poder. Manda sobre las demas
+   animaciones de estado, por eso se aplica antes que ellas en el render. */
+@keyframes power-shock {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-3px, 1px) rotate(-4deg); }
+  20% { transform: translate(3px, -2px) rotate(4deg); }
+  30% { transform: translate(-4px, 0) rotate(-5deg); }
+  40% { transform: translate(4px, 2px) rotate(5deg); }
+  50% { transform: translate(-3px, -1px) rotate(-4deg); }
+  60% { transform: translate(3px, 1px) rotate(3deg); }
+  70% { transform: translate(-2px, 2px) rotate(-3deg); }
+  80% { transform: translate(2px, -1px) rotate(2deg); }
+  90% { transform: translate(-1px, 0) rotate(-1deg); }
+}
+
+.animate-power-shock {
+  animation: power-shock 0.3s ease-in-out 5;
+}
+
+/* Temblor de la HABITACION entera al recibir el impacto: el cuarto se estremece
+   y se ilumina con el color del poder. */
+@keyframes room-shock {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  15% { transform: translate(-3px, 1px) scale(1.012); }
+  30% { transform: translate(3px, -2px) scale(1.018); }
+  45% { transform: translate(-3px, 2px) scale(1.012); }
+  60% { transform: translate(3px, -1px) scale(1.016); }
+  75% { transform: translate(-2px, 1px) scale(1.008); }
+  90% { transform: translate(2px, -1px) scale(1.01); }
+}
+
+.animate-room-shock {
+  animation: room-shock 0.32s ease-in-out 4;
+}
+
+/* Halo de color que recorre la habitacion golpeada. */
+@keyframes room-hit-glow {
+  0%   { opacity: 0; }
+  30%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+.animate-room-hit-glow {
+  animation: room-hit-glow 1.2s ease-out forwards;
 }
 
 /* Estela de chispas que queda en el camino recorrido. */

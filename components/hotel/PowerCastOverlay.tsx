@@ -107,9 +107,30 @@ export const PowerCastOverlay: React.FC<PowerCastOverlayProps> = ({
         const color = def?.beamColor || '#FACC15';
         const dx = t.toX - t.fromX;
         const dy = t.toY - t.fromY;
+        // Longitud y angulo del trayecto, para dibujar la estela recta.
+        const dist = Math.hypot(dx, dy);
+        const angulo = (Math.atan2(dy, dx) * 180) / Math.PI;
 
         return (
           <React.Fragment key={t.cast.id}>
+            {/* 0. Rastro de energia: linea que une emisor y receptor y se
+                dibuja sola al disparar. Da contexto al rayo (se ve de donde a
+                donde va antes de que llegue el proyectil). */}
+            <div
+              className="absolute animate-power-trace"
+              style={{
+                left: `${t.fromX}px`,
+                top: `${t.fromY}px`,
+                width: `${dist}px`,
+                height: 3,
+                marginTop: -1.5,
+                transformOrigin: 'left center',
+                background: `linear-gradient(90deg, transparent 0%, ${color} 18%, #FFFFFF 50%, ${color} 82%, transparent 100%)`,
+                boxShadow: `0 0 8px 2px ${color}cc`,
+                ['--angulo' as any]: `${angulo}deg`,
+              }}
+            />
+
             {/* 1. Carga en el emisor: pulso que se agranda antes de disparar. */}
             <div
               className="absolute animate-power-charge rounded-full"
