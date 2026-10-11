@@ -9,7 +9,7 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.10.09-11';
+export const APP_VERSION = '2026.10.09-12';
 
 export const APP_VERSION_NOTES = [
   'fix conexion: bufferutil dejaba el socket muerto a los ~20s',
@@ -27,6 +27,7 @@ export const APP_VERSION_NOTES = [
   'sincronia entre dispositivos: estado canonico en el servidor + un solo dueno',
   'licencia PolyForm Noncommercial: se puede usar y mejorar, no vender',
   'guia para agentes de IA (AGENTS.md) + historico de versiones',
+  'fix: el hotel ya no tiembla al construir o derribar un piso (bucle de autoescalado)',
   'fix: fila de Don Pepe desbordada por eventos member',
   'fix: estado viejo tumbaba la app en movil/tablet',
 ] as const;

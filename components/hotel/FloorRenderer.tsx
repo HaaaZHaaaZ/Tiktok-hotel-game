@@ -58,13 +58,27 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
 
   return (
     <div
-      className={`relative w-full border-x-4 border-t-2 border-b-2 border-slate-700 bg-stone-900 shadow-2xl transition-all duration-1000 ease-in-out ${
+      // `transition-[max-height,opacity,transform]` en vez de `transition-all`:
+      // `all` obligaba al navegador a vigilar TODAS las propiedades del subarbol
+      // del piso (que tiene ~30 nodos) en cada frame de la animacion. Con la
+      // lista explicita solo se siguen las tres que de verdad cambian, que es lo
+      // que se notaba como tirones al derribar un piso.
+      className={`relative w-full border-x-4 border-t-2 border-b-2 border-slate-700 bg-stone-900 shadow-2xl transition-[max-height,opacity,transform] duration-1000 ease-in-out ${
         isCollapsingHeight
           ? 'max-h-0 py-0 opacity-0 border-y-0 overflow-hidden scale-95'
           : 'max-h-[350px] p-2'
       } ${
         isCrackingAndFlickering ? 'animate-shake shadow-[0_0_30px_rgba(239,68,68,0.9)]' : ''
       }`}
+      /* `contain: paint` aisla el repintado del piso: cuando su altura cambia,
+         el navegador no necesita recalcular los pisos vecinos. `will-change`
+         avisa de que la altura va a animarse, para que suba a su propia capa
+         antes de empezar en vez de improvisarlo en el primer frame (que es lo
+         que producia el tiron inicial). */
+      style={{
+        contain: 'paint',
+        willChange: isCollapsingHeight ? 'max-height, opacity, transform' : undefined,
+      }}
     >
       {/* 1. Structural Demolition: Cracks & Electrical Outages */}
       {isCrackingAndFlickering && (

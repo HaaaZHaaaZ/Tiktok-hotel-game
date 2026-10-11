@@ -57,38 +57,94 @@ export const HotelView: React.FC = () => {
     skyGradient = 'from-slate-950 via-blue-950 to-slate-900';
   }
 
-  // Calculate perfect auto-fit scale so all users are in view
-  const calculateAutoFit = useCallback(() => {
-    if (!viewportRef.current || !buildingRef.current) return;
-    const vHeight = viewportRef.current.clientHeight;
-    const vWidth = viewportRef.current.clientWidth;
-    const bHeight = buildingRef.current.scrollHeight;
-    const bWidth = buildingRef.current.scrollWidth || 480;
+  /**
+   * Recalculo del autoFit con HISTERESIS y a prueba de reentrada.
+   *
+   * El edificio lleva `transform: scale(...)` y a la vez se mide para calcular
+   * esa escala: cualquier cambio de escala altera el tamano medido, que pide
+   * otra escala, que vuelve a cambiar el tamano. Es un bucle de realimentacion.
+   *
+   * Durante una demolicion o una construccion el piso anima su `max-height`
+   * durante 1s, asi que el `ResizeObserver` del edificio se dispara en CADA
+   * frame. Sin freno, la escala se recalcula decenas de veces por segundo y el
+   * edificio se encoge y crece a saltos: es el "desaparece y vuelve a aparecer".
+   *
+   * Dos defensas:
+   *  - `rAF` agrupa la rafaga de avisos en un solo recalculo por frame.
+   *  - `REESCALA_MINIMA` ignora los cambios minusculos. El colapso de un piso
+   *    solo altera la escala un ~4%, asi que se espera a que termine la
+   *    animacion y entonces se ajusta UNA vez. El edificio se ve moverse de
+   *    forma continua en vez de temblar.
+   */
+  const autoFitRafRef = useRef<number | null>(null);
+  const escalaActualRef = useRef(0);
 
-    if (vHeight > 50 && bHeight > 50) {
-      // Leave safety margins for HUD and safe zones
-      const verticalScale = (vHeight - 16) / bHeight;
-      const horizontalScale = (vWidth - 12) / Math.max(bWidth, 460);
-      const computedScale = Math.min(verticalScale, horizontalScale, 1.0);
-      // Floor at 0.35 minimum for extreme height
-      setAutoFitScale(Math.max(0.35, Math.min(1.0, Number(computedScale.toFixed(3)))));
-    }
-  }, []);
+  const scheduleAutoFit = useCallback(
+    (forzar = false) => {
+      if (autoFitRafRef.current !== null) return; // ya hay uno en cola
+      autoFitRafRef.current = window.requestAnimationFrame(() => {
+        autoFitRafRef.current = null;
+        if (!viewportRef.current || !buildingRef.current) return;
+
+        const vHeight = viewportRef.current.clientHeight;
+        const vWidth = viewportRef.current.clientWidth;
+        const bHeight = buildingRef.current.scrollHeight;
+        const bWidth = buildingRef.current.scrollWidth || 480;
+        if (vHeight <= 50 || bHeight <= 50) return;
+
+        const verticalScale = (vHeight - 16) / bHeight;
+        const horizontalScale = (vWidth - 12) / Math.max(bWidth, 460);
+        const computed = Math.min(verticalScale, horizontalScale, 1.0);
+        const nueva = Math.max(0.35, Math.min(1.0, Number(computed.toFixed(3))));
+
+        // Umbral: un cambio por debajo del 1.5% no compensa el reflow que
+        // provoca (medir el edificio entero no es gratis).
+        const anterior = escalaActualRef.current;
+        if (!forzar && anterior > 0 && Math.abs(nueva - anterior) / anterior < 0.015) {
+          return;
+        }
+        escalaActualRef.current = nueva;
+        setAutoFitScale(nueva);
+      });
+    },
+    []
+  );
 
   useEffect(() => {
-    calculateAutoFit();
-    const handleResize = () => calculateAutoFit();
+    scheduleAutoFit(true);
+    const handleResize = () => scheduleAutoFit(true);
     window.addEventListener('resize', handleResize);
 
-    const ro = new ResizeObserver(() => calculateAutoFit());
+    // Observa el VIEWPORT, no el edificio.
+    //
+    // Observar el edificio era la causa del bucle: su tamano cambia como
+    // consecuencia de la escala que aqui se calcula. El viewport (la ventana del
+    // movil o la columna del navegador) cambia por motivos externos, que es lo
+    // que de verdad interesa vigilar.
+    const ro = new ResizeObserver(() => scheduleAutoFit());
     if (viewportRef.current) ro.observe(viewportRef.current);
-    if (buildingRef.current) ro.observe(buildingRef.current);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       ro.disconnect();
+      if (autoFitRafRef.current !== null) {
+        window.cancelAnimationFrame(autoFitRafRef.current);
+        autoFitRafRef.current = null;
+      }
     };
-  }, [calculateAutoFit, floors.length]);
+  }, [scheduleAutoFit, floors.length]);
+
+  // Al terminar una demolicion, ajustar la escala una sola vez.
+  //
+  // La animacion del piso dura 1s. Al acabar, el edificio ya tiene su altura
+  // definitiva y conviene reencuadrarlo. Se espera a que pase para no recalcular
+  // en mitad del movimiento.
+  const demoliendo = state.demolitionState?.isDemolishing;
+  useEffect(() => {
+    if (demoliendo) return;
+    const t = window.setTimeout(() => scheduleAutoFit(true), 1100);
+    return () => window.clearTimeout(t);
+  }, [demoliendo, scheduleAutoFit]);
 
   // Determine active transform based on camera state for dynamic broadcast prominence
   let transformValue = `scale(${autoFitScale})`;
