@@ -1,0 +1,294 @@
+'use client';
+
+/**
+ * Cliente de sincronizacion del hotel entre dispositivos.
+ *
+ * Habla con `/api/hotel/sync`, que guarda el estado canonico. Cada pantalla:
+ *  - Lee el estado del servidor y lo adopta cuando cambia.
+ *  - Publica sus cambios locales.
+ *  - Pelea por ser el PROPIETARIO (uno solo) para aplicar los eventos del live
+ *    y correr la simulacion.
+ *
+ * Sin el paso del propietario, cada pestana aplicaria los mismos eventos por su
+ * cuenta y el hotel se desviaria en segundos (cada una con sus aleatorios).
+ *
+ * `localStorage` y `BroadcastChannel` se mantienen como cache y para la
+ * sincronia instantanea dentro del mismo navegador, pero la fuente de verdad es
+ * el servidor: es lo unico que alcanza a otros dispositivos.
+ */
+
+const POLL_MS = 1200;
+const HEARTBEAT_MS = 3000;
+
+export interface HotelSyncStatus {
+  isOwner: boolean;
+  revision: number;
+  peers: number;
+  online: boolean;
+  clientId: string;
+}
+
+class HotelSyncService {
+  /** Identidad de esta pestana. Se usa para la propiedad y para contarla. */
+  private clientId = `c_${Math.random().toString(36).slice(2, 10)}`;
+
+  /** Ultima revision conocida: cursor de lectura. */
+  private revision = 0;
+  private owner = false;
+  private peers = 0;
+  private online = false;
+
+  private pollTimer: any = null;
+  private beatTimer: any = null;
+
+  /** Ultimo estado publicado, para no reenviar lo mismo. */
+  private lastPushed = '';
+  /** Verdadero mientras se aplica estado del servidor (evita el eco). */
+  private applyingRemote = false;
+
+  private stateListeners: Array<(state: any) => void> = [];
+  private statusListeners: Array<(status: HotelSyncStatus) => void> = [];
+  /** Se avisa una sola vez, si el servidor no tenia estado que dar. */
+  private seedListeners: Array<() => void> = [];
+
+  private started = false;
+  /**
+   * Ya se ha hablado con el servidor al menos una vez?
+   *
+   * Hasta que no se sepa que hay en el servidor, una pestana NO debe publicar su
+   * estado local: podria tener un hotel viejo en `localStorage` y machacaria el
+   * canonico que comparten los demas dispositivos. Solo despues del primer poll
+   * (con el estado ya adoptado, o sabiendo que el servidor esta vacio) tiene
+   * sentido publicar.
+   */
+  private synced = false;
+  /** Ya se aviso de que el servidor estaba vacio? (evita repetirlo cada poll). */
+  private seedAvisado = false;
+
+  public hasSynced(): boolean {
+    return this.synced;
+  }
+
+  public getClientId(): string {
+    return this.clientId;
+  }
+
+  /** Es esta pantalla la que manda (aplica eventos y publica)? */
+  public isOwner(): boolean {
+    return this.owner;
+  }
+
+  /** Se esta aplicando estado del servidor ahora mismo? */
+  public isApplyingRemote(): boolean {
+    return this.applyingRemote;
+  }
+
+  public getStatus(): HotelSyncStatus {
+    return {
+      isOwner: this.owner,
+      revision: this.revision,
+      peers: this.peers,
+      online: this.online,
+      clientId: this.clientId,
+    };
+  }
+
+  public onRemoteState(cb: (state: any) => void): () => void {
+    this.stateListeners.push(cb);
+    return () => {
+      this.stateListeners = this.stateListeners.filter((fn) => fn !== cb);
+    };
+  }
+
+  public onStatus(cb: (status: HotelSyncStatus) => void): () => void {
+    this.statusListeners.push(cb);
+    return () => {
+      this.statusListeners = this.statusListeners.filter((fn) => fn !== cb);
+    };
+  }
+
+  /**
+   * Avisa cuando el servidor NO tiene estado (primer arranque tras un reinicio).
+   *
+   * Sin esto, el hotel se quedaba vacio para siempre: nadie publica porque
+   * "el estado no ha cambiado", y el servidor no tiene nada que repartir. La
+   * pantalla que recibe el aviso siembra el servidor con su estado local.
+   */
+  public onSeedNeeded(cb: () => void): () => void {
+    this.seedListeners.push(cb);
+    return () => {
+      this.seedListeners = this.seedListeners.filter((fn) => fn !== cb);
+    };
+  }
+
+  private emitStatus(): void {
+    const st = this.getStatus();
+    this.statusListeners.forEach((fn) => fn(st));
+  }
+
+  public start(): void {
+    if (this.started || typeof window === 'undefined') return;
+    this.started = true;
+
+    // Reclamar cuanto antes: si esta es la unica pantalla, debe mandar ya, sin
+    // esperar al primer latido, o se perderian los eventos que lleguen entretanto.
+    this.beat();
+    this.poll();
+
+    this.pollTimer = setInterval(() => this.poll(), POLL_MS);
+    this.beatTimer = setInterval(() => this.beat(), HEARTBEAT_MS);
+
+    // Al cerrar, soltar la propiedad para que otra pantalla la tome al instante
+    // en vez de esperar a que caduque el latido.
+    window.addEventListener('pagehide', this.handleUnload);
+  }
+
+  public stop(): void {
+    if (!this.started) return;
+    this.started = false;
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.beatTimer) clearInterval(this.beatTimer);
+    this.pollTimer = null;
+    this.beatTimer = null;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pagehide', this.handleUnload);
+    }
+  }
+
+  private handleUnload = (): void => {
+    // `keepalive` deja que la peticion salga aunque la pagina se este cerrando.
+    try {
+      fetch('/api/hotel/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'release', clientId: this.clientId }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
+
+  private async beat(): Promise<void> {
+    try {
+      const res = await fetch('/api/hotel/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'claim', clientId: this.clientId }),
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      const era = this.owner;
+      this.owner = d.ownerId === this.clientId;
+      this.online = true;
+      if (typeof d.peers === 'number') this.peers = d.peers;
+      if (era !== this.owner) {
+        // Cambio de mando: interesa saberlo (la UI lo muestra y el bucle de
+        // simulacion se enciende o se apaga con esto).
+        this.emitStatus();
+      }
+    } catch {
+      this.online = false;
+    }
+  }
+
+  private async poll(): Promise<void> {
+    try {
+      const res = await fetch(
+        `/api/hotel/sync?since=${this.revision}&clientId=${this.clientId}`,
+        { cache: 'no-store' }
+      );
+      if (!res.ok) return;
+      const d = await res.json();
+
+      this.online = true;
+      this.synced = true;
+      if (typeof d.peers === 'number') this.peers = d.peers;
+      if (typeof d.ownerId !== 'undefined') {
+        this.owner = d.ownerId === this.clientId;
+      }
+
+      // El estado solo llega cuando hay algo nuevo (`stateRevision > since`).
+      if (typeof d.stateRevision === 'number' && d.stateRevision > this.revision) {
+        this.revision = d.stateRevision;
+        if (d.state) {
+          // Se marca ANTES de avisar, para que el guardado automatico no
+          // reenvie al servidor lo que acaba de llegar de el (seria un eco
+          // infinito entre pantallas).
+          this.applyingRemote = true;
+          this.lastPushed = safeStringify(d.state);
+          this.stateListeners.forEach((fn) => fn(d.state));
+          window.setTimeout(() => {
+            this.applyingRemote = false;
+          }, 500);
+        }
+      } else if (d.stateRevision === 0 && !this.seedAvisado) {
+        // El servidor no tiene estado (primer arranque, o se reinicio el
+        // contenedor). Se avisa UNA vez para que alguien lo siembre; si no, el
+        // hotel se quedaria vacio para siempre porque nadie publica.
+        this.seedAvisado = true;
+        this.seedListeners.forEach((fn) => fn());
+      }
+
+      if (typeof d.revision === 'number') {
+        this.revision = Math.max(this.revision, d.revision);
+      }
+
+      this.emitStatus();
+    } catch {
+      this.online = false;
+      this.emitStatus();
+    }
+  }
+
+  /**
+   * Publica el estado local.
+   *
+   * `force` = cambio iniciado por una persona (panel de administracion). Esos
+   * se envian siempre, aunque esta pantalla no sea la propietaria, para que el
+   * ajuste se vea al instante en todas partes. Los cambios automaticos (bucle de
+   * simulacion, eventos del live) solo los manda el propietario.
+   */
+  public pushState(state: any, force = false): void {
+    if (!this.started || typeof window === 'undefined') return;
+    if (this.applyingRemote) return;
+    // Sin haber leido aun del servidor no se publica: una pestana recien abierta
+    // podria llevar un hotel viejo en `localStorage` y machacaria el canonico.
+    if (!this.synced) return;
+    if (!force && !this.owner) return;
+
+    const json = safeStringify(state);
+    if (!json || json === this.lastPushed) return;
+    this.lastPushed = json;
+
+    try {
+      fetch('/api/hotel/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'push', clientId: this.clientId, state }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && typeof d.stateRevision === 'number') {
+            this.revision = Math.max(this.revision, d.stateRevision);
+          }
+        })
+        .catch(() => {
+          // Si falla, el proximo cambio lo reintenta. No se bloquea la app.
+        });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** `JSON.stringify` que no revienta con referencias circulares. */
+function safeStringify(value: any): string {
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export const hotelSync = new HotelSyncService();

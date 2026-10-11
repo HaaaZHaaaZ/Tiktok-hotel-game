@@ -9,7 +9,7 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.10.09-8';
+export const APP_VERSION = '2026.10.09-9';
 
 export const APP_VERSION_NOTES = [
   'fix conexion: bufferutil dejaba el socket muerto a los ~20s',
@@ -24,6 +24,7 @@ export const APP_VERSION_NOTES = [
   'Don Pepe se estresa con mas de 5 en fila: ojos rojos, sudor y badge PRISA',
   'fix: suite 4/4 ya no crea una fila extra de habitaciones',
   'poderes: rastro de energia + el receptor tiembla con su habitacion',
+  'sincronia entre dispositivos: estado canonico en el servidor + un solo dueno',
   'fix: fila de Don Pepe desbordada por eventos member',
   'fix: estado viejo tumbaba la app en movil/tablet',
 ] as const;

@@ -27,6 +27,7 @@ import { generateRandomAvatar } from '../services/avatarGenerator';
 import { audioEngine } from '../services/audioEngine';
 import { mockTikTokProvider, DEFAULT_GIFT_RULES, TikTokCommentEvent, TikTokGiftEvent, TikTokJoinEvent } from '../services/tiktokProvider';
 import { hotelBroadcast } from '../services/broadcastSync';
+import { hotelSync, HotelSyncStatus } from '../services/hotelSync';
 import { browserReport } from '../services/browserReport';
 
 const triggerConfetti = (opts: any = {}) => {
@@ -77,6 +78,12 @@ interface HotelContextValue {
   simulateUserFollow: (username?: string) => void;
   /** Cierra la animacion de un poder cuando termina. */
   finalizePowerCast: (castId: string) => void;
+  /**
+   * Estado de la sincronizacion entre dispositivos.
+   * `isOwner` = esta pantalla es la que manda (aplica eventos del live y
+   * publica). `peers` = cuantas pantallas estan viendo el hotel.
+   */
+  syncStatus: HotelSyncStatus;
 }
 
 const HotelContext = createContext<HotelContextValue | null>(null);
@@ -469,6 +476,73 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [state]);
 
+  // --- Sincronizacion entre DISPOSITIVOS (fuente de verdad: el servidor) ---
+  //
+  // `localStorage` y `BroadcastChannel` (mas abajo) solo alcanzan al MISMO
+  // navegador: con ellos, el movil y el PC mostraban hoteles distintos. Aqui se
+  // habla con `/api/hotel/sync`, que guarda el estado canonico y lo reparte.
+  //
+  // Dos reglas, y las dos importan:
+  //
+  //  1. ADOPTAR: cuando el servidor tiene una revision nueva, se aplica tal cual.
+  //     Se marca `applyingRemote` para que el guardado automatico no devuelva el
+  //     cambio al servidor (seria un eco entre pantallas, sin fin).
+  //
+  //  2. PUBLICAR: solo el PROPIETARIO manda los cambios automaticos (eventos del
+  //     live, bucle de simulacion, reloj de estadia). Si cada pantalla los
+  //     aplicara por su cuenta, cada una tiraria sus propios dados y el hotel se
+  //     desviaria en segundos. Los cambios de una persona (panel de admin) se
+  //     fuerzan y viajan siempre, para que el ajuste se vea al instante.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    hotelSync.start();
+
+    const unsubState = hotelSync.onRemoteState((remoto) => {
+      if (!remoto || !Array.isArray(remoto.floors)) return;
+      setState((prev) => ({
+        ...sanitizeRestoredState(remoto),
+        // La camara y la animacion de recepcion son LOCALES: cada pantalla mira
+        // donde quiere y no deben saltar cuando otro dispositivo cambia algo.
+        camera: prev.camera,
+      }));
+    });
+
+    const unsubStatus = hotelSync.onStatus((st) => setSyncStatus(st));
+
+    // El servidor no tenia estado (primer arranque, o se reinicio el
+    // contenedor): se siembra con el estado local para que el hotel arranque en
+    // vez de quedarse vacio. `force` porque hay que publicar aunque esta
+    // pantalla no sea todavia la propietaria.
+    const unsubSeed = hotelSync.onSeedNeeded(() => {
+      hotelSync.pushState(stateRef.current, true);
+    });
+
+    return () => {
+      unsubState();
+      unsubStatus();
+      unsubSeed();
+      hotelSync.stop();
+    };
+  }, []);
+
+  // Publicar el estado cuando cambia.
+  //
+  // El retardo agrupa rafagas de cambios (el bucle de vida toca muchos campos de
+  // golpe) en un solo envio, en vez de saturar el endpoint.
+  useEffect(() => {
+    if (!isHydratedRef.current) return;
+    if (typeof window === 'undefined') return;
+
+    const t = window.setTimeout(() => {
+      // El cambio manual viaja siempre; el automatico solo desde el propietario.
+      const forzar = forzarPublicacionRef.current;
+      forzarPublicacionRef.current = false;
+      hotelSync.pushState(state, forzar);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [state]);
+
   // Sync across tabs via storage event
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -498,6 +572,25 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [showSafeZoneGuides, setShowSafeZoneGuides] = useState(false);
   const [isAudioMuted, setIsAudioMutedState] = useState(false);
   const [isSpeechMuted, setIsSpeechMutedState] = useState(false);
+
+  // Estado de la sincronizacion entre dispositivos (quien manda, cuantos ven).
+  const [syncStatus, setSyncStatus] = useState<HotelSyncStatus>(() => hotelSync.getStatus());
+
+  /**
+   * Marca para forzar la publicacion del proximo cambio.
+   *
+   * Los cambios automaticos (eventos del live, reloj de vida) solo los manda el
+   * propietario, para que no se dupliquen. Pero los que hace una PERSONA desde
+   * el panel de administracion deben verse al instante en todos los
+   * dispositivos, aunque quien los haga no sea el propietario.
+   *
+   * Se levanta con `marcarCambioManual()` justo antes de la accion y se consume
+   * en el efecto de publicacion.
+   */
+  const forzarPublicacionRef = useRef(false);
+  const marcarCambioManual = useCallback(() => {
+    forzarPublicacionRef.current = true;
+  }, []);
 
   // Active Floor view for multi-floor hotels
   const [activeFloorNumber, setActiveFloorNumber] = useState(1);
@@ -2011,6 +2104,13 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const TICK_SEC = TICK_MS / 1000;
 
     const interval = setInterval(() => {
+      // Solo el PROPIETARIO corre el reloj de vida.
+      //
+      // Cada pantalla tiene su propio `setInterval`: si todas descontaran
+      // estadia, los residentes moririan a distinta velocidad segun cuantas
+      // pestanas hubiera abiertas, y el hotel no cuadraria entre dispositivos.
+      if (!hotelSync.isOwner()) return;
+
       const s = stateRef.current;
       const residentsList = Object.values(s.residents);
       if (residentsList.length === 0) return;
@@ -2530,41 +2630,67 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Cross-Tab Broadcast Synchronization from Admin Window or Webhook
   useEffect(() => {
     const unsubscribe = hotelBroadcast.subscribe((msg) => {
+      // Los eventos del LIVE solo los aplica el propietario.
+      //
+      // El polling del webhook corre en CADA pestana y todas reciben los mismos
+      // eventos de TikTok. Si cada una los aplicara, un mismo espectador entraria
+      // una vez por pestana abierta (y los aleatorios de cada una —avatar,
+      // personalidad, accion— no coincidirian). El propietario los aplica y el
+      // resto adopta su estado por el servidor.
+      //
+      // Los comandos de una PERSONA (panel de admin) si pasan siempre: son
+      // intenciones explicitas y deben verse al instante en todas partes.
+      if (msg.type === 'TIKTOK_EVENT' && !hotelSync.isOwner()) {
+        return;
+      }
+
       switch (msg.type) {
         case 'JOIN_VIEWER':
+          marcarCambioManual();
           joinViewer(msg.payload.username, msg.payload.personality, msg.payload.avatar);
           break;
         case 'SEND_COMMENT':
+          marcarCambioManual();
           sendComment(msg.payload.username, msg.payload.comment);
           break;
         case 'SEND_GIFT':
+          marcarCambioManual();
           sendGift(msg.payload.giftId, msg.payload.username);
           break;
         case 'TRIGGER_EVENT':
+          marcarCambioManual();
           triggerEvent(msg.payload.eventType);
           break;
         case 'SET_TIME':
+          marcarCambioManual();
           setTimeOfDay(msg.payload.timeOfDay);
           break;
         case 'SET_WEATHER':
+          marcarCambioManual();
           setWeather(msg.payload.weather);
           break;
         case 'CREATE_FLOOR':
+          marcarCambioManual();
           createNextFloor();
           break;
         case 'DESTROY_FLOOR':
+          marcarCambioManual();
           destroyUpperFloor(msg.payload.floorNumber);
           break;
         case 'EVICT_RESIDENT':
+          marcarCambioManual();
           evictResident(msg.payload.residentId);
           break;
         case 'BOOST_STABILITY':
+          marcarCambioManual();
           boostStability(msg.payload.residentId, msg.payload.amount);
           break;
         case 'RESET_LIVE':
+          marcarCambioManual();
           resetLiveSession(msg.payload.mode);
           break;
         case 'UPDATE_RULES':
+          marcarCambioManual();
           updateEntryRules(msg.payload.rules);
           break;
         case 'SYNC_STATE':
@@ -2734,6 +2860,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         simulateUserLikes,
         simulateUserFollow,
         finalizePowerCast,
+        syncStatus,
       }}
     >
       {children}

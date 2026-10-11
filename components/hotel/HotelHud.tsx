@@ -16,6 +16,7 @@ export const HotelHud: React.FC = () => {
     setIsSpeechMuted,
     showSafeZoneGuides,
     setShowSafeZoneGuides,
+    syncStatus,
   } = useHotel();
 
   const totalResidents = Object.keys(state.residents).length;
@@ -56,6 +57,41 @@ export const HotelHud: React.FC = () => {
           {/* Building Floors Indicator Badge (Broadcast display only) */}
           <span className="text-[10px] bg-slate-800/90 text-amber-300 px-2 py-0.5 rounded border border-slate-700 font-bold font-mono">
             {state.floors.length} PISOS ACTIVOS
+          </span>
+
+          {/* Indicador de sincronia entre dispositivos.
+              Verde + "EN VIVO" = esta pantalla manda (aplica eventos y publica).
+              Azul = esta pantalla solo muestra lo que hace el propietario.
+              Gris = sin conexion con el servidor (sigue funcionando en local). */}
+          <span
+            title={
+              !syncStatus.online
+                ? 'Sin conexion con el servidor de sincronia. El hotel sigue funcionando en esta pantalla.'
+                : syncStatus.isOwner
+                ? 'Esta pantalla MANDA: aplica los eventos del live y reparte los cambios.'
+                : 'Esta pantalla sigue al dispositivo que manda. Los cambios se ven aqui en tiempo real.'
+            }
+            className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border font-bold ${
+              !syncStatus.online
+                ? 'bg-slate-800/90 text-slate-400 border-slate-700'
+                : syncStatus.isOwner
+                ? 'bg-emerald-900/90 text-emerald-300 border-emerald-500/60'
+                : 'bg-sky-900/90 text-sky-300 border-sky-500/60'
+            }`}
+          >
+            <span className={syncStatus.online ? 'animate-pulse' : ''}>
+              {!syncStatus.online ? '⚪' : syncStatus.isOwner ? '🟢' : '🔵'}
+            </span>
+            <span>
+              {!syncStatus.online
+                ? 'SIN SYNC'
+                : syncStatus.isOwner
+                ? 'EN VIVO'
+                : 'ESPEJO'}
+            </span>
+            {syncStatus.peers > 1 && (
+              <span className="text-[8px] opacity-80">· {syncStatus.peers}📱</span>
+            )}
           </span>
         </div>
 
