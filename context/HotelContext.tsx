@@ -20,6 +20,7 @@ import {
   PowerCast,
   SUPERPOWERS,
   STAY_REWARDS,
+  GiftDefinition,
 } from '../types/hotel';
 import { createInitialHotel, createFloorRooms } from '../services/hotelService';
 import { COMANDOS_PODER } from '../services/powerCommands';
@@ -102,6 +103,12 @@ const BUBBLE_MS = 2800;
  * `.animate-power-shock` en globals.css.
  */
 const POWER_HIT_MS = 1400;
+
+/**
+ * Cuanto dura la celebracion de un regalo (aura en el personaje y destello en la
+ * habitacion). Pasado ese tiempo queda solo el trofeo en la repisa.
+ */
+const GIFT_CELEBRATION_MS = 4000;
 
 /**
  * Umbrales de expansion de la habitacion: +1 habitacion por cada 500 likes,
@@ -219,6 +226,19 @@ function sanitizeRestoredState(parsed: any): any {
         raw.powerHit && typeof raw.powerHit === 'object' &&
         Date.now() - (Number(raw.powerHit.at) || 0) < POWER_HIT_MS
           ? raw.powerHit
+          : null,
+      // Los trofeos SI sobreviven: son el historial de donaciones del residente.
+      giftTrophies: Array.isArray(raw.giftTrophies)
+        ? raw.giftTrophies.filter(
+            (t: any) => t && typeof t === 'object' && typeof t.icon === 'string'
+          )
+        : [],
+      giftCount: Number.isFinite(Number(raw.giftCount)) ? Number(raw.giftCount) : 0,
+      // La celebracion si es momentanea.
+      giftAt:
+        Number.isFinite(Number(raw.giftAt)) &&
+        Date.now() - Number(raw.giftAt) < GIFT_CELEBRATION_MS
+          ? Number(raw.giftAt)
           : null,
       energy: Number.isFinite(Number(raw.energy)) ? Number(raw.energy) : 80,
       stability: Number.isFinite(Number(raw.stability)) ? Number(raw.stability) : 100,
@@ -464,6 +484,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => clearTimeout(timer);
   }, []);
 
+  // Cancelar los temporizadores de entrega de regalos al desmontar.
+  useEffect(() => {
+    const timers = timersRegaloRef.current;
+    return () => {
+      timers.forEach((t) => window.clearTimeout(t));
+      timers.length = 0;
+    };
+  }, []);
+
   // Persistent storage auto-save (ONLY AFTER HYDRATION HAS COMPLETED)
   useEffect(() => {
     if (!isHydratedRef.current) return;
@@ -591,6 +620,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const marcarCambioManual = useCallback(() => {
     forzarPublicacionRef.current = true;
   }, []);
+
+  /**
+   * Temporizadores de entrega de regalos pendientes.
+   *
+   * Cuando alguien dona sin estar dentro, su regalo se entrega en cuanto entra
+   * (con sondeos). Esos temporizadores hay que cancelarlos al desmontar: si no,
+   * seguirian ejecutandose y aplicarian el regalo a un hotel que ya no existe.
+   */
+  const timersRegaloRef = useRef<number[]>([]);
 
   // Active Floor view for multi-floor hotels
   const [activeFloorNumber, setActiveFloorNumber] = useState(1);
@@ -1056,6 +1094,9 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       expandedRoomIds: [],
       roomSpan: 1,
       evicting: null,
+      giftTrophies: [],
+      giftCount: 0,
+      giftAt: null,
       speechBubble: pendingMsg
         ? {
             id: `bubble_pending_${residentId}`,
@@ -1543,20 +1584,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, BUBBLE_MS + 200);
   }, [joinViewer, lanzarPoder, addNotification]);
 
-  const sendGift = useCallback((giftId: string, username?: string) => {
-    const gift = DEFAULT_GIFT_RULES.find((g) => g.id === giftId) || DEFAULT_GIFT_RULES[0];
+  /**
+   * Aplica un regalo a un residente concreto: efectos, trofeo y celebracion.
+   *
+   * Vive fuera de `sendGift` porque hay dos caminos que deben producir el mismo
+   * resultado: quien dona ya estaba dentro, y quien dona y entra en ese momento.
+   */
+  const aplicarRegalo = useCallback((gift: GiftDefinition, residentId: string) => {
     const s = stateRef.current;
-    const residentsList = Object.values(s.residents);
-
-    let targetResident: Resident | undefined;
-    if (username) {
-      const clean = username.replace('@', '').toLowerCase();
-      targetResident = residentsList.find((r) => (r.username || '').toLowerCase() === clean);
-    }
-    if (!targetResident && residentsList.length > 0) {
-      targetResident = residentsList[Math.floor(Math.random() * residentsList.length)];
-    }
-
+    const targetResident = s.residents[residentId];
     if (!targetResident) return;
 
     // Sounds & FX based on gift tier
@@ -1627,6 +1663,23 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ? res.stayTotalSec
         : Number(prev.entryRules?.residentStaySeconds) || 0;
 
+      // --- Trofeos: huella permanente del regalo ---
+      //
+      // Se acumulan por tipo de regalo y NO se borran: quedan en la repisa de la
+      // habitacion mientras el residente siga dentro. Es lo que hace que quien
+      // dona vea que su aporte sigue ahi, en vez de una animacion que se apaga.
+      const trofeos = [...(res.giftTrophies || [])];
+      const yaTiene = trofeos.findIndex((t) => t.icon === gift.icon);
+      if (yaTiene >= 0) {
+        trofeos[yaTiene] = { ...trofeos[yaTiene], count: trofeos[yaTiene].count + 1 };
+      } else {
+        trofeos.push({ icon: gift.icon, name: gift.name, count: 1, tier: gift.tier });
+      }
+      // Los mas valiosos primero, y como mucho 6 para que quepan en la repisa.
+      const ordenTier: Record<string, number> = { vip: 0, large: 1, medium: 2, small: 3 };
+      trofeos.sort((a, b) => (ordenTier[a.tier] ?? 9) - (ordenTier[b.tier] ?? 9));
+      const trofeosVisibles = trofeos.slice(0, 6);
+
       return {
         ...prev,
         vipPenthouseResidents: updatedPenthouse,
@@ -1649,21 +1702,98 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             points: res.points + gift.pointsBoost,
             vipLevel: nextVipLevel,
             currentAction: 'celebrating',
+            giftTrophies: trofeosVisibles,
+            giftCount: (res.giftCount || 0) + 1,
+            giftAt: Date.now(),
           },
         },
       };
     });
 
+    // La notificacion dice cuantos lleva EN TOTAL, no solo el ultimo: asi quien
+    // dona ve que sus regalos se acumulan en vez de perderse uno a uno.
+    const totalTrasEste = (targetResident.giftCount || 0) + 1;
     addNotification({
       type: 'gift',
       icon: gift.icon,
-      text: `${targetResident.displayName} recibió ${gift.name}!`,
+      text:
+        totalTrasEste > 1
+          ? `${targetResident.displayName} recibió ${gift.name}! (${totalTrasEste} regalos en su repisa)`
+          : `${targetResident.displayName} recibió ${gift.name}! Ya tiene su primer trofeo`,
     });
 
     if (gift.triggersEvent) {
       triggerEvent(gift.triggersEvent);
     }
   }, [setCameraFocus, addNotification, triggerEvent]);
+
+  const sendGift = useCallback((giftId: string, username?: string) => {
+    const gift = DEFAULT_GIFT_RULES.find((g) => g.id === giftId) || DEFAULT_GIFT_RULES[0];
+    const s = stateRef.current;
+    const residentsList = Object.values(s.residents);
+
+    let targetResident: Resident | undefined;
+    if (username) {
+      const clean = username.replace('@', '').toLowerCase();
+      targetResident = residentsList.find((r) => (r.username || '').toLowerCase() === clean);
+    }
+
+    // Si quien dona no esta dentro, se le mete.
+    //
+    // Un regalo es el gesto mas fuerte que puede hacer un espectador, y hasta
+    // ahora solo se veia si ya era residente: quien donaba desde fuera no
+    // recibia nada y su regalo caia en un residente al azar. Ahora entra, y el
+    // trofeo queda en SU habitacion, a su nombre.
+    if (!targetResident && username) {
+      const clean = username.replace('@', '').toLowerCase();
+      joinViewer(username);
+
+      // El residente no existe hasta el siguiente render, asi que se sondea a
+      // ver si ya aparece para aplicarle el regalo.
+      //
+      // IMPORTANTE: `entregado` evita que el regalo se aplique VARIAS veces.
+      // Antes los cuatro sondeos se ejecutaban siempre y cada uno aplicaba el
+      // regalo: un solo cohete contaba como cuatro y el residente se llevaba
+      // cuatro trofeos. Ahora, en cuanto uno acierta, los demas no hacen nada.
+      //
+      // El estado va en un objeto (no en una variable suelta) porque los
+      // temporizadores lo comparten entre si.
+      const entrega = { hecha: false };
+      const intentos = [900, 1800, 2700, 3600];
+      intentos.forEach((ms, i) => {
+        const timer = window.setTimeout(() => {
+          if (entrega.hecha) return;
+          const recien = Object.values(stateRef.current.residents).find(
+            (r) => (r.username || '').toLowerCase() === clean
+          );
+          if (recien) {
+            entrega.hecha = true;
+            aplicarRegalo(gift, recien.id);
+            return;
+          }
+          // Ultimo intento fallido (no llego a entrar, hotel lleno): el regalo
+          // no se pierde, cae en otro residente.
+          if (i === intentos.length - 1) {
+            const lista = Object.values(stateRef.current.residents);
+            if (lista.length) {
+              entrega.hecha = true;
+              aplicarRegalo(gift, lista[Math.floor(Math.random() * lista.length)].id);
+            }
+          }
+        }, ms);
+        timersRegaloRef.current.push(timer);
+      });
+      return;
+    }
+
+    if (!targetResident && residentsList.length > 0) {
+      targetResident = residentsList[Math.floor(Math.random() * residentsList.length)];
+    }
+
+    if (!targetResident) return;
+    aplicarRegalo(gift, targetResident.id);
+  }, [setCameraFocus, addNotification, triggerEvent, joinViewer, aplicarRegalo]);
+
 
   // Day / Evening / Night advance
   const advanceTime = useCallback(() => {
@@ -2237,6 +2367,12 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             res.powerHit && Date.now() - (Number(res.powerHit.at) || 0) >= POWER_HIT_MS
               ? null
               : res.powerHit ?? null,
+          // La celebracion del regalo tambien expira: los trofeos se quedan, el
+          // aura y el destello no.
+          giftAt:
+            res.giftAt && Date.now() - Number(res.giftAt) >= GIFT_CELEBRATION_MS
+              ? null
+              : res.giftAt ?? null,
         };
       });
 

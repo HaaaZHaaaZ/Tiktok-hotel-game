@@ -7,6 +7,9 @@ import { CharacterRenderer } from './CharacterRenderer';
 /** Debe coincidir con la duracion de `.animate-room-shock` en globals.css. */
 const POWER_HIT_MS = 1400;
 
+/** Duracion de la celebracion de un regalo (destello dorado en la habitacion). */
+const GIFT_CELEBRATION_MS = 4000;
+
 interface RoomRendererProps {
   room: Room;
   resident?: Resident;
@@ -76,6 +79,16 @@ export const RoomRenderer: React.FC<RoomRendererProps> = ({
     ? SUPERPOWERS.find((p) => p.id === hit!.power)?.beamColor || '#FACC15'
     : null;
 
+  // --- Regalos recibidos por el ocupante ---
+  //
+  // Los trofeos son la huella PERMANENTE de las donaciones: se quedan en la
+  // repisa mientras el residente este dentro. Quien dona ve su regalo ahi
+  // mucho despues de que la animacion haya terminado.
+  const trofeos = resident?.giftTrophies || [];
+  const totalRegalos = resident?.giftCount || 0;
+  const isGiftCelebrating =
+    !!resident?.giftAt && Date.now() - resident.giftAt < GIFT_CELEBRATION_MS;
+
   // Compute character X position across the open room floor (no dividing bars)
   let targetXPercent = resident?.coordX || 48;
   if (isGaming) targetXPercent = 26; // Sitting right by the PC desk
@@ -103,6 +116,57 @@ export const RoomRenderer: React.FC<RoomRendererProps> = ({
           }}
         />
       )}
+
+      {/* Destello dorado al recibir un regalo: la habitacion entera se ilumina. */}
+      {isGiftCelebrating && (
+        <div
+          className="absolute inset-0 z-44 rounded-lg pointer-events-none animate-gift-room-flash"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 60%, rgba(251,191,36,0.55) 0%, rgba(245,158,11,0.25) 45%, transparent 75%)',
+            boxShadow: 'inset 0 0 26px 8px rgba(251,191,36,0.65)',
+          }}
+        />
+      )}
+
+      {/* REPISA DE TROFEOS: los regalos recibidos, en la pared de la habitacion.
+          Es la huella permanente — se queda mientras el residente este dentro,
+          asi que quien dona ve su aporte mucho despues de la animacion. */}
+      {trofeos.length > 0 && (
+        <div
+          className="absolute top-[42px] inset-x-0 z-44 pointer-events-none flex flex-col items-center gap-0.5"
+          title={`${totalRegalos} regalo${totalRegalos === 1 ? '' : 's'} recibido${totalRegalos === 1 ? '' : 's'}`}
+        >
+          <div className="flex items-end justify-center gap-1 rounded-t-md border-x border-t border-amber-400/60 bg-gradient-to-b from-amber-900/85 to-amber-950/85 px-2 pt-0.5 shadow-lg">
+            {trofeos.map((t, i) => (
+              <div
+                key={`${t.icon}-${i}`}
+                className="relative flex flex-col items-center animate-gift-trophy"
+                style={{ animationDelay: `${i * 90}ms` }}
+                title={`${t.name} ×${t.count}`}
+              >
+                <span className="text-[13px] leading-none drop-shadow-[0_0_3px_rgba(251,191,36,0.9)]">
+                  {t.icon}
+                </span>
+                {t.count > 1 && (
+                  <span className="absolute -bottom-1 -right-1.5 bg-amber-500 text-slate-950 font-black text-[6px] leading-none px-1 rounded-full border border-amber-200">
+                    ×{t.count}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Tablilla de la repisa */}
+          <div className="w-[86%] h-1 rounded-full bg-gradient-to-r from-transparent via-amber-500 to-transparent shadow-[0_0_6px_rgba(251,191,36,0.7)]" />
+          {/* Brillos subiendo */}
+          <div className="absolute -top-1 left-1/3 w-1 h-1 rounded-full bg-amber-200 animate-gift-sparkle" />
+          <div
+            className="absolute -top-1 right-1/3 w-1 h-1 rounded-full bg-yellow-100 animate-gift-sparkle"
+            style={{ animationDelay: '0.7s' }}
+          />
+        </div>
+      )}
+
       {/* Marca de suite expandida: esta habitacion ocupa varias columnas. */}
       {esHabitacionDoble && (
         <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-45 pointer-events-none bg-amber-500 text-slate-950 font-black text-[7px] px-1.5 py-[1px] rounded-full border border-amber-200 shadow-lg animate-pulse whitespace-nowrap">

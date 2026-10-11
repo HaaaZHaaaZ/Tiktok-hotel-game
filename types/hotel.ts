@@ -180,6 +180,25 @@ export interface Resident {
    * (no hace falta un temporizador que la borre). `at` es `Date.now()`.
    */
   powerHit?: { power: SuperpowerId; at: number } | null;
+  /**
+   * Regalos que ha recibido, con su icono y cuantos de cada uno.
+   *
+   * Se ACUMULAN y se quedan: son los trofeos que la habitacion muestra en la
+   * repisa. Un regalo no puede ser solo una animacion de dos segundos, porque
+   * quien dona no ve ninguna huella de lo que aporto. Aqui queda constancia
+   * permanente mientras el residente siga dentro.
+   */
+  giftTrophies?: { icon: string; name: string; count: number; tier: GiftDefinition['tier'] }[];
+  /**
+   * Regalos recibidos en total. Es el nivel del aura que envuelve al personaje:
+   * mas regalos, aura mas intensa.
+   */
+  giftCount?: number;
+  /**
+   * Momento del ultimo regalo. La habitacion y el personaje lo celebran unos
+   * segundos; luego queda solo el trofeo.
+   */
+  giftAt?: number | null;
 }
 
 export interface Room {

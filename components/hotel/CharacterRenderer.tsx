@@ -12,6 +12,9 @@ interface CharacterRendererProps {
 /** Debe coincidir con la duracion de `.animate-power-shock` en globals.css. */
 const POWER_HIT_MS = 1400;
 
+/** Duracion de la celebracion de un regalo (aura + salto). */
+const GIFT_CELEBRATION_MS = 4000;
+
 export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   resident,
   scale = 1,
@@ -68,9 +71,21 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   const hit = resident.powerHit;
   const isPowerHit = !!hit && Date.now() - (hit.at || 0) < POWER_HIT_MS;
 
+  // --- Regalos ---
+  //
+  // `giftCount` decide la intensidad del aura: quien ha recibido mas regalos
+  // brilla mas. Es permanente mientras este dentro, para que su aporte se siga
+  // viendo mucho despues de la animacion.
+  const giftCount = resident.giftCount || 0;
+  const giftLevel = Math.min(5, giftCount);
+  const isGiftCelebrating = !!resident.giftAt && Date.now() - resident.giftAt < GIFT_CELEBRATION_MS;
+
   // Animation classes based on action and stress
   let animClass = 'transition-transform duration-300';
-  if (isPowerHit) {
+  if (isGiftCelebrating) {
+    // Salto de celebracion: manda durante unos segundos.
+    animClass += ' animate-[bounce_0.5s_infinite]';
+  } else if (isPowerHit) {
     // Temblor violento: manda sobre cualquier otra animacion.
     animClass += ' animate-power-shock';
   } else if (isCritical) {
@@ -96,6 +111,35 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
         transformOrigin: 'bottom center',
       }}
     >
+      {/* AURA DE DONANTE: halo dorado proporcional a los regalos recibidos.
+          Es permanente mientras el residente este dentro, asi que quien dono ve
+          su aporte reflejado en su personaje mucho despues de la animacion. */}
+      {giftLevel > 0 && (
+        <div
+          className={`absolute -inset-1 rounded-full pointer-events-none ${
+            isGiftCelebrating ? 'animate-gift-aura' : ''
+          }`}
+          style={{
+            background: `radial-gradient(circle at 50% 55%, rgba(251,191,36,${
+              0.14 + giftLevel * 0.07
+            }) 0%, rgba(245,158,11,${0.08 + giftLevel * 0.05}) 45%, transparent 72%)`,
+            boxShadow:
+              giftLevel >= 3
+                ? `0 0 ${6 + giftLevel * 3}px ${giftLevel}px rgba(251,191,36,${0.18 + giftLevel * 0.06})`
+                : undefined,
+            zIndex: -1,
+          }}
+          title={`${giftCount} regalo${giftCount === 1 ? '' : 's'} recibido${giftCount === 1 ? '' : 's'}`}
+        />
+      )}
+
+      {/* Corona de donante: a partir de 3 regalos, para que se note quien aporta. */}
+      {giftLevel >= 3 && (
+        <div className="absolute -top-3.5 z-40 pointer-events-none text-[11px] animate-bounce">
+          {giftLevel >= 5 ? '💎' : '⭐'}
+        </div>
+      )}
+
       {/* SUPERIOR LAYER: Action Floating Emotes & Time Warning (z-50, never cropped) */}
       <div className="absolute -top-8 z-50 flex flex-col items-center pointer-events-none w-max">
         {/* Superpoderes ganados por likes. Se dibujan siempre (tambien si esta
