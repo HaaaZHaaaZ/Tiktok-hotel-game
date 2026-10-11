@@ -1,30 +1,43 @@
 'use client';
 
 /**
- * Cliente de sincronizacion del hotel entre dispositivos.
+ * Cliente del estado compartido del hotel.
  *
- * Habla con `/api/hotel/sync`, que guarda el estado canonico. Cada pantalla:
- *  - Lee el estado del servidor y lo adopta cuando cambia.
- *  - Publica sus cambios locales.
- *  - Pelea por ser el PROPIETARIO (uno solo) para aplicar los eventos del live
- *    y correr la simulacion.
+ * MODELO: una sola fuente de verdad.
  *
- * Sin el paso del propietario, cada pestana aplicaria los mismos eventos por su
- * cuenta y el hotel se desviaria en segundos (cada una con sus aleatorios).
+ *   - El servidor guarda EL hotel. Todas las pantallas leen el mismo.
+ *   - La PANTALLA DEL HOTEL es la que escribe: aplica los eventos del live y el
+ *     reloj de estadia, y publica el resultado.
+ *   - El PANEL DE ADMIN no tiene hotel propio. Lee el estado del servidor y
+ *     manda ORDENES (reglas, clima, eventos, demoler...).
+ *   - Cualquier otra pantalla solo LEE.
  *
- * `localStorage` y `BroadcastChannel` se mantienen como cache y para la
- * sincronia instantanea dentro del mismo navegador, pero la fuente de verdad es
- * el servidor: es lo unico que alcanza a otros dispositivos.
+ * POR QUE ASI
+ *
+ * Antes cada pantalla publicaba su hotel entero y peleaba por ser el "dueno".
+ * Como el panel montaba tambien un hotel completo (con sus reglas por defecto),
+ * los dos escribian y el estado oscilaba entre las dos versiones: el "pongo 10 y
+ * cambia solo entre 30 y 10".
+ *
+ * Con este modelo hay UN solo escritor, asi que no hay nada que pelear.
+ *
+ * POR QUE HAY UN "ESCRITOR" Y NO SIMPLEMENTE "TODOS LEEN"
+ *
+ * Algo tiene que decidir quien aplica los eventos del live y corre el reloj de
+ * estadia: si lo hicieran todas las pestanas, un espectador entraria una vez por
+ * pestana (con un avatar distinto en cada una) y el reloj correria N veces mas
+ * rapido. Es un detalle interno de coordinacion, no una jerarquia visible: la
+ * interfaz ya no distingue "maestro" y "espejo", todas las pantallas muestran el
+ * mismo hotel.
  */
 
 const POLL_MS = 1200;
-const HEARTBEAT_MS = 3000;
 
 export interface HotelSyncStatus {
-  isOwner: boolean;
-  revision: number;
-  peers: number;
+  /** Hay conexion con el servidor? */
   online: boolean;
+  /** Cuantas pantallas estan viendo el hotel. */
+  peers: number;
   clientId: string;
 }
 
@@ -32,72 +45,55 @@ class HotelSyncService {
   /**
    * Identidad de esta PESTANA (no de esta carga de pagina).
    *
-   * Antes se generaba con `Math.random()` en cada carga del modulo. Como cada
-   * recarga de la pagina vuelve a ejecutar el modulo, cada F5 creaba una
-   * identidad nueva: el servidor las acumulaba y en dos pestanas con varias
-   * recargas se veian 15 "pantallas conectadas" cuando solo habia dos.
-   *
-   * `sessionStorage` es exactamente el ambito que se necesita: sobrevive a las
-   * recargas de la misma pestana, es independiente entre pestanas, y se borra
-   * solo al cerrarla. Asi recargar NO crea una sesion nueva.
+   * Se guarda en `sessionStorage`: sobrevive a las recargas de la misma pestana,
+   * es independiente entre pestanas, y se borra al cerrarla. Asi recargar no
+   * crea una sesion nueva (antes cada F5 generaba una identidad y el contador de
+   * pantallas se disparaba).
    */
   private clientId = obtenerClientIdDePestana();
 
   /** Ultima revision conocida: cursor de lectura. */
   private revision = 0;
-  private owner = false;
   private peers = 0;
   private online = false;
-
   private pollTimer: any = null;
-  private beatTimer: any = null;
 
   /** Ultimo estado publicado, para no reenviar lo mismo. */
   private lastPushed = '';
-  /** Verdadero mientras se aplica estado del servidor (evita el eco). */
-  private applyingRemote = false;
+
+  /**
+   * Esta pantalla escribe el hotel?
+   *
+   * Se concede desde el servidor (`claimWriter`), no se decide aqui. Solo la
+   * pantalla del hotel lo pide; el panel manda ordenes y las demas solo leen.
+   */
+  private writer = false;
 
   private stateListeners: Array<(state: any) => void> = [];
+  private orderListeners: Array<(orders: any[]) => void> = [];
   private statusListeners: Array<(status: HotelSyncStatus) => void> = [];
-  /** Se avisa una sola vez, si el servidor no tenia estado que dar. */
   private seedListeners: Array<() => void> = [];
 
   private started = false;
-  /**
-   * Ya se ha hablado con el servidor al menos una vez?
-   *
-   * Hasta que no se sepa que hay en el servidor, una pestana NO debe publicar su
-   * estado local: podria tener un hotel viejo en `localStorage` y machacaria el
-   * canonico que comparten los demas dispositivos. Solo despues del primer poll
-   * (con el estado ya adoptado, o sabiendo que el servidor esta vacio) tiene
-   * sentido publicar.
-   */
+  /** Ya se hablo con el servidor al menos una vez? */
   private synced = false;
-  /** Ya se aviso de que el servidor estaba vacio? (evita repetirlo cada poll). */
+  /** Ya se aviso de que el servidor estaba vacio? */
   private seedAvisado = false;
-
-  public hasSynced(): boolean {
-    return this.synced;
-  }
 
   public getClientId(): string {
     return this.clientId;
   }
 
-  /** Es esta pantalla la que manda (aplica eventos y publica)? */
-  public isOwner(): boolean {
-    return this.owner;
+  public isWriter(): boolean {
+    return this.writer;
   }
 
-  /** Se esta aplicando estado del servidor ahora mismo? */
-  public isApplyingRemote(): boolean {
-    return this.applyingRemote;
+  public hasSynced(): boolean {
+    return this.synced;
   }
 
   public getStatus(): HotelSyncStatus {
     return {
-      isOwner: this.owner,
-      revision: this.revision,
       peers: this.peers,
       online: this.online,
       clientId: this.clientId,
@@ -111,6 +107,14 @@ class HotelSyncService {
     };
   }
 
+  /** Ordenes de administracion pendientes de aplicar. */
+  public onOrders(cb: (orders: any[]) => void): () => void {
+    this.orderListeners.push(cb);
+    return () => {
+      this.orderListeners = this.orderListeners.filter((fn) => fn !== cb);
+    };
+  }
+
   public onStatus(cb: (status: HotelSyncStatus) => void): () => void {
     this.statusListeners.push(cb);
     return () => {
@@ -121,9 +125,8 @@ class HotelSyncService {
   /**
    * Avisa cuando el servidor NO tiene estado (primer arranque tras un reinicio).
    *
-   * Sin esto, el hotel se quedaba vacio para siempre: nadie publica porque
-   * "el estado no ha cambiado", y el servidor no tiene nada que repartir. La
-   * pantalla que recibe el aviso siembra el servidor con su estado local.
+   * Sin esto el hotel se quedaba vacio: nadie publica porque "el estado no ha
+   * cambiado" y el servidor no tiene nada que repartir.
    */
   public onSeedNeeded(cb: () => void): () => void {
     this.seedListeners.push(cb);
@@ -137,90 +140,48 @@ class HotelSyncService {
     this.statusListeners.forEach((fn) => fn(st));
   }
 
-  public start(): void {
+  /**
+   * Arranca el ciclo.
+   *
+   * `quererEscribir` lo pone la pantalla del hotel. Se pide el puesto al
+   * servidor; si lo concede, esta pantalla pasa a publicar el estado.
+   */
+  public start(quererEscribir: boolean): void {
     if (this.started || typeof window === 'undefined') return;
     this.started = true;
+    this.writer = false;
 
-    // Reclamar cuanto antes: si esta es la unica pantalla, debe mandar ya, sin
-    // esperar al primer latido, o se perderian los eventos que lleguen entretanto.
-    this.beat();
+    if (quererEscribir) {
+      // Reclamar cuanto antes: si esta es la unica pantalla, debe escribir ya,
+      // sin esperar al primer poll, o se perderian los eventos que lleguen
+      // entretanto.
+      void this.claimWriter();
+    }
+
     this.poll();
-
     this.pollTimer = setInterval(() => this.poll(), POLL_MS);
-    this.beatTimer = setInterval(() => this.beat(), HEARTBEAT_MS);
-
-    // Al cerrar, soltar la propiedad para que otra pantalla la tome al instante
-    // en vez de esperar a que caduque el latido.
-    window.addEventListener('pagehide', this.handleUnload);
   }
 
   public stop(): void {
     if (!this.started) return;
     this.started = false;
     if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.beatTimer) clearInterval(this.beatTimer);
     this.pollTimer = null;
-    this.beatTimer = null;
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('pagehide', this.handleUnload);
-    }
   }
 
-  private handleUnload = (): void => {
-    // NO soltar la propiedad al recargar.
-    //
-    // `pagehide` tambien se dispara en un F5, asi que al recargar se soltaba el
-    // mando y otra pantalla lo tomaba; al volver, la primera lo recuperaba. Con
-    // dos pestanas eso es un vaiven constante de propiedad (y cada cambio
-    // reinicia el reloj de estadia en la nueva duena).
-    //
-    // Solo se suelta si la pestana se CIERRA de verdad. `persisted` distingue
-    // el paso a la cache de navegacion (atras/adelante) de un cierre real.
-    // Para el cierre real, el latido caduca solo en 10s: es margen de sobra y
-    // evita el vaiven.
-    try {
-      const nav = performance.getEntriesByType('navigation')[0] as
-        | PerformanceNavigationTiming
-        | undefined;
-      // `reload` = el usuario recargo. No soltar.
-      if (nav && nav.type === 'reload') return;
-    } catch {
-      // Si no se puede saber, se prefiere NO soltar (el latido caduca igual).
-      return;
-    }
-
-    try {
-      fetch('/api/hotel/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'release', clientId: this.clientId }),
-        keepalive: true,
-      }).catch(() => {});
-    } catch {
-      // ignore
-    }
-  };
-
-  private async beat(): Promise<void> {
+  /** Pide al servidor ser la pantalla que escribe. */
+  private async claimWriter(): Promise<void> {
     try {
       const res = await fetch('/api/hotel/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'claim', clientId: this.clientId }),
+        body: JSON.stringify({ action: 'claimWriter', clientId: this.clientId }),
       });
       if (!res.ok) return;
       const d = await res.json();
-      const era = this.owner;
-      this.owner = d.ownerId === this.clientId;
-      this.online = true;
-      if (typeof d.peers === 'number') this.peers = d.peers;
-      if (era !== this.owner) {
-        // Cambio de mando: interesa saberlo (la UI lo muestra y el bucle de
-        // simulacion se enciende o se apaga con esto).
-        this.emitStatus();
-      }
+      this.writer = !!d?.isWriter;
     } catch {
-      this.online = false;
+      // Sin respuesta: se reintentara en el siguiente poll.
     }
   }
 
@@ -236,49 +197,42 @@ class HotelSyncService {
       this.online = true;
       this.synced = true;
       if (typeof d.peers === 'number') this.peers = d.peers;
-      if (typeof d.ownerId !== 'undefined') {
-        this.owner = d.ownerId === this.clientId;
+
+      // Si el servidor dice que el puesto de escritor esta libre (nadie, o el
+      // que habia dejo de dar senal) y esta pantalla quiere escribirlo, se
+      // reclama. Es el traspaso automatico: si la pantalla que mandaba se
+      // cierra o el movil se bloquea, otra toma el control sola.
+      if (this.quererEscribir && !this.writer && !d.writerId) {
+        void this.claimWriter();
+      } else if (this.quererEscribir && this.writer && d.writerId && d.writerId !== this.clientId) {
+        // Otra pantalla lo tiene: esta deja de escribir en vez de pelearlo.
+        this.writer = false;
       }
 
-      // El estado solo llega cuando hay algo nuevo (`stateRevision > since`).
-      if (typeof d.stateRevision === 'number' && d.stateRevision > this.revision) {
-        this.revision = d.stateRevision;
+      // Estado nuevo: se adopta.
+      //
+      // Tambien lo hace la pantalla que escribe: si el servidor tiene una
+      // revision distinta de la suya (por ejemplo tras un reinicio, o porque
+      // acaba de reclamar el puesto), debe partir del estado canonico y no de
+      // su copia local. Sin esto, cada pestana recien abierta arrancaba con su
+      // hotel por defecto y lo publicaba encima del que ya habia.
+      if (typeof d.revision === 'number' && d.revision > this.revision) {
+        this.revision = d.revision;
         if (d.state) {
-          // El PROPIETARIO no adopta su propio estado.
-          //
-          // Es la causa del parpadeo continuo con el live conectado: el dueno
-          // aplicaba un evento, publicaba el estado, y en el siguiente poll el
-          // servidor se lo devolvia como "novedad". Adoptarlo creaba un arbol
-          // con referencias nuevas -> React remontaba el edificio entero. Y como
-          // los eventos del live llegan sin parar, el edificio parpadeaba en
-          // cada uno.
-          //
-          // El dueno ya tiene ese estado (es suyo); no necesita re-adoptarlo.
-          // Los espejos SI lo adoptan, que es justo su trabajo.
-          if (this.owner) {
-            this.lastPushed = safeStringify(d.state);
-          } else {
-            // Se marca ANTES de avisar, para que el guardado automatico no
-            // reenvie al servidor lo que acaba de llegar de el (seria un eco
-            // infinito entre pantallas).
-            this.applyingRemote = true;
-            this.lastPushed = safeStringify(d.state);
-            this.stateListeners.forEach((fn) => fn(d.state));
-            window.setTimeout(() => {
-              this.applyingRemote = false;
-            }, 500);
-          }
+          this.lastPushed = safeStringify(d.state);
+          this.stateListeners.forEach((fn) => fn(d.state));
         }
-      } else if (d.stateRevision === 0 && !this.seedAvisado) {
-        // El servidor no tiene estado (primer arranque, o se reinicio el
-        // contenedor). Se avisa UNA vez para que alguien lo siembre; si no, el
-        // hotel se quedaria vacio para siempre porque nadie publica.
+      } else if (d.revision === 0 && !this.seedAvisado) {
+        // El servidor no tiene estado: se avisa una vez para que alguien lo
+        // siembre (solo lo hara la pantalla del hotel).
         this.seedAvisado = true;
         this.seedListeners.forEach((fn) => fn());
       }
 
-      if (typeof d.revision === 'number') {
-        this.revision = Math.max(this.revision, d.revision);
+      // Ordenes de administracion pendientes. El servidor solo las entrega a la
+      // pantalla que escribe, que es la unica que puede aplicarlas.
+      if (Array.isArray(d.orders) && d.orders.length) {
+        this.orderListeners.forEach((fn) => fn(d.orders));
       }
 
       this.emitStatus();
@@ -288,21 +242,25 @@ class HotelSyncService {
     }
   }
 
+  /** Esta pantalla quiere escribir el hotel? (lo pide la del hotel) */
+  private quererEscribir = false;
+
+  /** Marca la intencion de escribir; se consume en `start`. */
+  public setQuererEscribir(v: boolean): void {
+    this.quererEscribir = v;
+  }
+
   /**
-   * Publica el estado local.
+   * Publica el estado del hotel.
    *
-   * `force` = cambio iniciado por una persona (panel de administracion). Esos
-   * se envian siempre, aunque esta pantalla no sea la propietaria, para que el
-   * ajuste se vea al instante en todas partes. Los cambios automaticos (bucle de
-   * simulacion, eventos del live) solo los manda el propietario.
+   * Solo la pantalla que escribe lo llama (`writer` lo concede el servidor).
    */
-  public pushState(state: any, force = false): void {
+  public pushState(state: any): void {
     if (!this.started || typeof window === 'undefined') return;
-    if (this.applyingRemote) return;
-    // Sin haber leido aun del servidor no se publica: una pestana recien abierta
+    if (!this.writer) return;
+    // Sin haber leido del servidor no se publica: una pestana recien abierta
     // podria llevar un hotel viejo en `localStorage` y machacaria el canonico.
     if (!this.synced) return;
-    if (!force && !this.owner) return;
 
     const json = safeStringify(state);
     if (!json || json === this.lastPushed) return;
@@ -316,15 +274,52 @@ class HotelSyncService {
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
-          if (d && typeof d.stateRevision === 'number') {
-            this.revision = Math.max(this.revision, d.stateRevision);
+          if (d && typeof d.revision === 'number') {
+            this.revision = Math.max(this.revision, d.revision);
           }
         })
         .catch(() => {
-          // Si falla, el proximo cambio lo reintenta. No se bloquea la app.
+          // Si falla, el proximo cambio lo reintenta.
         });
     } catch {
       // ignore
+    }
+  }
+
+  /**
+   * Confirma que las ordenes se han aplicado.
+   *
+   * El servidor las entrega SIN borrarlas. Hay que llamar a esto DESPUES de
+   * aplicarlas: si no se confirmara, se reaplicarian en cada poll.
+   */
+  public async takeOrders(): Promise<void> {
+    try {
+      await fetch('/api/hotel/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'takeOrders', clientId: this.clientId }),
+      });
+    } catch {
+      // Si falla, las ordenes seguirán ahi y se reintentaran en el proximo poll.
+    }
+  }
+
+  /**
+   * Envia una orden de administracion.
+   *
+   * La llama el panel de admin. La pantalla del hotel la recogera y la aplicara.
+   * Asi el panel NO necesita tener su propio hotel para mandar cambios.
+   */
+  public async sendOrder(type: string, payload: any = {}): Promise<boolean> {
+    try {
+      const res = await fetch('/api/hotel/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'order', clientId: this.clientId, order: { type, payload } }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 }
@@ -346,11 +341,6 @@ const CLIENT_ID_KEY = 'tiktok_hotel_client_id';
  *
  * Se guarda en `sessionStorage`, que sobrevive a las recargas pero no se
  * comparte entre pestañas ni dispositivos, y se borra al cerrar la pestaña.
- * Es justo el ciclo de vida de una "pantalla conectada".
- *
- * Si `sessionStorage` no está disponible (modo privado muy restrictivo, o
- * bloqueado), se cae a una identidad en memoria: se pierde al recargar, pero la
- * app sigue funcionando.
  */
 function obtenerClientIdDePestana(): string {
   const nuevo = () => `c_${Math.random().toString(36).slice(2, 10)}`;

@@ -81,9 +81,9 @@ interface HotelContextValue {
   /** Cierra la animacion de un poder cuando termina. */
   finalizePowerCast: (castId: string) => void;
   /**
-   * Estado de la sincronizacion entre dispositivos.
-   * `isOwner` = esta pantalla es la que manda (aplica eventos del live y
-   * publica). `peers` = cuantas pantallas estan viendo el hotel.
+   * Estado de la sincronizacion.
+   * `peers` = cuantas pantallas estan viendo el mismo hotel.
+   * `online` = hay conexion con el servidor.
    */
   syncStatus: HotelSyncStatus;
 }
@@ -372,7 +372,25 @@ function sanitizeRestoredState(parsed: any): any {
   };
 }
 
-export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+/**
+ * Modo del provider.
+ *
+ *  - `hotel` : la pantalla del hotel. Aplica los eventos del live, corre el
+ *              reloj de estadia y aplica las ordenes del panel.
+ *  - `admin` : el panel. NO tiene hotel propio: lee el estado del servidor y
+ *              manda ordenes. Antes montaba un hotel completo con sus propias
+ *              reglas, y por eso el estado oscilaba entre las dos versiones (el
+ *              "pongo 10 y cambia solo entre 30 y 10").
+ *
+ * En los dos casos el hotel es el MISMO: hay un solo estado, en el servidor. No
+ * hay hoteles paralelos ni jerarquia visible de maestro/espejo.
+ */
+export type ModoHotel = 'hotel' | 'admin';
+
+export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHotel }> = ({
+  children,
+  modo = 'hotel',
+}) => {
   const [state, setState] = useState<HotelState>(() => {
     const initial = createInitialHotel();
     return {
@@ -509,66 +527,78 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [state]);
 
-  // --- Sincronizacion entre DISPOSITIVOS (fuente de verdad: el servidor) ---
+  /**
+   * Referencia estable a `aplicarOrden`, que se declara mas abajo (necesita
+   * funciones del contexto que todavia no existen aqui). El efecto de
+   * sincronizacion la usa para aplicar las ordenes del panel.
+   */
+  const aplicarOrdenRef = useRef<(o: { type: string; payload: any }) => void>(() => {});
+
+  // --- Sincronizacion (fuente de verdad: el servidor) ---
   //
   // `localStorage` y `BroadcastChannel` (mas abajo) solo alcanzan al MISMO
   // navegador: con ellos, el movil y el PC mostraban hoteles distintos. Aqui se
-  // habla con `/api/hotel/sync`, que guarda el estado canonico y lo reparte.
+  // habla con `/api/hotel/sync`, que guarda EL hotel y lo reparte.
   //
-  // Dos reglas, y las dos importan:
+  // El servidor guarda un unico estado. Todas las pantallas lo ADOPTAN tal cual
+  // cuando cambia, incluida la que escribe: asi ninguna arranca con su hotel por
+  // defecto y lo publica encima del que ya habia.
   //
-  //  1. ADOPTAR: cuando el servidor tiene una revision nueva, se aplica tal cual.
-  //     Se marca `applyingRemote` para que el guardado automatico no devuelva el
-  //     cambio al servidor (seria un eco entre pantallas, sin fin).
-  //
-  //  2. PUBLICAR: solo el PROPIETARIO manda los cambios automaticos (eventos del
-  //     live, bucle de simulacion, reloj de estadia). Si cada pantalla los
-  //     aplicara por su cuenta, cada una tiraria sus propios dados y el hotel se
-  //     desviaria en segundos. Los cambios de una persona (panel de admin) se
-  //     fuerzan y viajan siempre, para que el ajuste se vea al instante.
+  // Solo UNA pantalla lo publica (la del hotel). No es una jerarquia visible: es
+  // lo que impide que un espectador entre una vez por pestana abierta y que el
+  // reloj de estadia corra N veces mas rapido.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    hotelSync.start();
+    // La pantalla del hotel pide ser la que escribe. El panel no: manda ordenes.
+    hotelSync.setQuererEscribir(modo === 'hotel');
+    hotelSync.start(modo === 'hotel');
 
     const unsubState = hotelSync.onRemoteState((remoto) => {
       if (!remoto || !Array.isArray(remoto.floors)) return;
       // Un estado sin pisos no puede sustituir a uno que si los tiene: dejaria
-      // el hotel sin edificio (y el autoFit mediria un contenedor vacio). Si el
-      // servidor publica algo asi, se descarta y se conserva lo que hay.
+      // el hotel sin edificio.
       if (remoto.floors.length === 0) return;
 
       // NO pasar el estado remoto por `sanitizeRestoredState`.
       //
-      // Esa funcion esta pensada para un estado GUARDADO que puede venir de una
-      // version anterior, y reconstruye TODOS los objetos (pisos, habitaciones,
-      // residentes) con spreads nuevos. Al llegar un evento del live, React
-      // recibia un arbol con referencias completamente nuevas y desmontaba y
-      // remontaba el edificio entero en cada evento: es el parpadeo continuo
-      // ("desaparece y vuelve") que se veia con el live conectado.
-      //
-      // El estado que llega del servidor ya viene saneado (se saneo al
-      // publicarlo), asi que aqui solo hay que adoptarlo tal cual.
+      // Esa funcion es para un estado GUARDADO de una version anterior y
+      // reconstruye TODOS los objetos con spreads nuevos. Al llegar un evento del
+      // live, React recibia un arbol con referencias nuevas y remontaba el
+      // edificio entero: es el parpadeo continuo que se veia con el live.
       setState((prev) => ({
         ...remoto,
         // La camara y la animacion de recepcion son LOCALES: cada pantalla mira
         // donde quiere y no deben saltar cuando otro dispositivo cambia algo.
         camera: prev.camera,
+        receptionAttending: prev.receptionAttending,
       }));
+    });
+
+    // Ordenes del panel de administracion. El servidor solo las entrega a la
+    // pantalla que escribe, que es la unica que puede aplicarlas.
+    //
+    // Se confirman DESPUES de aplicarlas (`takeOrders`), para que no se pierdan
+    // si la aplicacion falla a mitad.
+    const unsubOrders = hotelSync.onOrders((orders) => {
+      if (!hotelSync.isWriter()) return;
+      orders.forEach((o) => aplicarOrdenRef.current(o));
+      void hotelSync.takeOrders();
     });
 
     const unsubStatus = hotelSync.onStatus((st) => setSyncStatus(st));
 
     // El servidor no tenia estado (primer arranque, o se reinicio el
-    // contenedor): se siembra con el estado local para que el hotel arranque en
-    // vez de quedarse vacio. `force` porque hay que publicar aunque esta
-    // pantalla no sea todavia la propietaria.
+    // contenedor): lo siembra la pantalla del hotel para que arranque en vez de
+    // quedarse vacio.
     const unsubSeed = hotelSync.onSeedNeeded(() => {
-      hotelSync.pushState(stateRef.current, true);
+      if (!hotelSync.isWriter()) return;
+      hotelSync.pushState(stateRef.current);
     });
 
     return () => {
       unsubState();
+      unsubOrders();
       unsubStatus();
       unsubSeed();
       hotelSync.stop();
@@ -577,37 +607,45 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Publicar el estado cuando cambia.
   //
-  // El retardo agrupa rafagas de cambios (el bucle de vida toca muchos campos de
+  // `pushState` comprueba por dentro si esta pantalla es la que escribe (lo
+  // concede el servidor), asi que llamarlo desde el panel no hace nada. El
+  // retardo agrupa rafagas de cambios (el bucle de vida toca muchos campos de
   // golpe) en un solo envio, en vez de saturar el endpoint.
   useEffect(() => {
     if (!isHydratedRef.current) return;
     if (typeof window === 'undefined') return;
 
     const t = window.setTimeout(() => {
-      // El cambio manual viaja siempre; el automatico solo desde el propietario.
-      const forzar = forzarPublicacionRef.current;
-      forzarPublicacionRef.current = false;
-      hotelSync.pushState(state, forzar);
+      hotelSync.pushState(state);
     }, 350);
     return () => window.clearTimeout(t);
   }, [state]);
 
-  // Sync across tabs via storage event
+  // Sincronia entre pestanas del MISMO navegador.
+  //
+  // `localStorage` y `storage` no cruzan de un dispositivo a otro, y el estado
+  // canonico ya viaja por el servidor. Aqui solo se escucha para que una pestana
+  // que NO escribe no se quede con una copia rancia cuando otra guarda.
+  //
+  // OJO: antes esto machacaba el estado en CUALQUIER pestana, incluida la que
+  // escribia y el panel. Como cada una guarda lo suyo, se pisaban entre ellas y
+  // el hotel oscilaba. Ahora solo se aplica si esta pantalla NO escribe.
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === HOTEL_STORAGE_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (parsed && Array.isArray(parsed.floors)) {
-            setState((prev) => ({
-              ...sanitizeRestoredState(parsed),
-              receptionAttending: prev.receptionAttending, // keep local animation smooth
-              camera: prev.camera,
-            }));
-          }
-        } catch {
-          // ignore
+      if (e.key !== HOTEL_STORAGE_KEY || !e.newValue) return;
+      // La pantalla que escribe manda: su estado es el bueno y ya lo publica.
+      if (hotelSync.isWriter()) return;
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (parsed && Array.isArray(parsed.floors)) {
+          setState((prev) => ({
+            ...sanitizeRestoredState(parsed),
+            receptionAttending: prev.receptionAttending,
+            camera: prev.camera,
+          }));
         }
+      } catch {
+        // ignore
       }
     };
 
@@ -624,22 +662,6 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Estado de la sincronizacion entre dispositivos (quien manda, cuantos ven).
   const [syncStatus, setSyncStatus] = useState<HotelSyncStatus>(() => hotelSync.getStatus());
-
-  /**
-   * Marca para forzar la publicacion del proximo cambio.
-   *
-   * Los cambios automaticos (eventos del live, reloj de vida) solo los manda el
-   * propietario, para que no se dupliquen. Pero los que hace una PERSONA desde
-   * el panel de administracion deben verse al instante en todos los
-   * dispositivos, aunque quien los haga no sea el propietario.
-   *
-   * Se levanta con `marcarCambioManual()` justo antes de la accion y se consume
-   * en el efecto de publicacion.
-   */
-  const forzarPublicacionRef = useRef(false);
-  const marcarCambioManual = useCallback(() => {
-    forzarPublicacionRef.current = true;
-  }, []);
 
   /**
    * Temporizadores de entrega de regalos pendientes.
@@ -2276,12 +2298,12 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const TICK_SEC = TICK_MS / 1000;
 
     const interval = setInterval(() => {
-      // Solo el PROPIETARIO corre el reloj de vida.
+      // Solo la PANTALLA DEL HOTEL corre el reloj de vida.
       //
-      // Cada pantalla tiene su propio `setInterval`: si todas descontaran
-      // estadia, los residentes moririan a distinta velocidad segun cuantas
-      // pestanas hubiera abiertas, y el hotel no cuadraria entre dispositivos.
-      if (!hotelSync.isOwner()) return;
+      // Es la unica que escribe el estado. El panel de admin no lo hace: manda
+      // ordenes. Si varias pantallas descontaran estadia, los residentes
+      // moririan a distinta velocidad segun cuantas hubiera abiertas.
+      if (!hotelSync.isWriter()) return;
 
       const s = stateRef.current;
       const residentsList = Object.values(s.residents);
@@ -2879,67 +2901,52 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Cross-Tab Broadcast Synchronization from Admin Window or Webhook
   useEffect(() => {
     const unsubscribe = hotelBroadcast.subscribe((msg) => {
-      // Los eventos del LIVE solo los aplica el propietario.
+      // Los eventos del LIVE solo los aplica la pantalla del hotel.
       //
-      // El polling del webhook corre en CADA pestana y todas reciben los mismos
+      // El polling del webhook corre en CADA pantalla y todas reciben los mismos
       // eventos de TikTok. Si cada una los aplicara, un mismo espectador entraria
-      // una vez por pestana abierta (y los aleatorios de cada una —avatar,
-      // personalidad, accion— no coincidirian). El propietario los aplica y el
-      // resto adopta su estado por el servidor.
-      //
-      // Los comandos de una PERSONA (panel de admin) si pasan siempre: son
-      // intenciones explicitas y deben verse al instante en todas partes.
-      if (msg.type === 'TIKTOK_EVENT' && !hotelSync.isOwner()) {
+      // una vez por pantalla abierta (y los aleatorios de cada una —avatar,
+      // personalidad, accion— no coincidirian). La pantalla del hotel los aplica
+      // y las demas leen su estado.
+      if (msg.type === 'TIKTOK_EVENT' && !hotelSync.isWriter()) {
         return;
       }
 
       switch (msg.type) {
         case 'JOIN_VIEWER':
-          marcarCambioManual();
           joinViewer(msg.payload.username, msg.payload.personality, msg.payload.avatar);
           break;
         case 'SEND_COMMENT':
-          marcarCambioManual();
           sendComment(msg.payload.username, msg.payload.comment);
           break;
         case 'SEND_GIFT':
-          marcarCambioManual();
           sendGift(msg.payload.giftId, msg.payload.username, (msg.payload as any).giftCoins);
           break;
         case 'TRIGGER_EVENT':
-          marcarCambioManual();
           triggerEvent(msg.payload.eventType);
           break;
         case 'SET_TIME':
-          marcarCambioManual();
           setTimeOfDay(msg.payload.timeOfDay);
           break;
         case 'SET_WEATHER':
-          marcarCambioManual();
           setWeather(msg.payload.weather);
           break;
         case 'CREATE_FLOOR':
-          marcarCambioManual();
           createNextFloor();
           break;
         case 'DESTROY_FLOOR':
-          marcarCambioManual();
           destroyUpperFloor(msg.payload.floorNumber);
           break;
         case 'EVICT_RESIDENT':
-          marcarCambioManual();
           evictResident(msg.payload.residentId);
           break;
         case 'BOOST_STABILITY':
-          marcarCambioManual();
           boostStability(msg.payload.residentId, msg.payload.amount);
           break;
         case 'RESET_LIVE':
-          marcarCambioManual();
           resetLiveSession(msg.payload.mode);
           break;
         case 'UPDATE_RULES':
-          marcarCambioManual();
           updateEntryRules(msg.payload.rules);
           break;
         case 'SYNC_STATE':
@@ -3072,6 +3079,103 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     simulateUserLikes,
     simulateUserFollow,
   ]);
+
+  /**
+   * Aplica una orden del panel de administracion.
+   *
+   * El panel NO tiene hotel propio: manda ordenes y esta funcion las ejecuta
+   * sobre el estado real del hotel. Asi hay un solo estado y no hay nada que
+   * pelear.
+   *
+   * IMPORTANTE: este bloque tiene que estar ANTES del `return` del componente.
+   * Antes vivia despues, asi que era codigo inalcanzable: el panel mandaba las
+   * ordenes y NADIE las aplicaba nunca. Es el "cambio el tiempo de duracion y no
+   * pasa nada".
+   */
+  const aplicarOrden = useCallback(
+    (orden: { type: string; payload: any }) => {
+      if (!orden || typeof orden.type !== 'string') return;
+      const p = orden.payload || {};
+
+      switch (orden.type) {
+        case 'UPDATE_RULES':
+          // Reemplaza solo lo que venga, para que un cambio de "tiempo de
+          // duracion" no borre el resto de reglas.
+          setState((prev) => ({
+            ...prev,
+            entryRules: { ...prev.entryRules, ...p },
+          }));
+          break;
+        case 'SET_WEATHER':
+          setState((prev) => ({ ...prev, weather: p.weather ?? prev.weather }));
+          break;
+        case 'SET_TIME':
+          setState((prev) => ({
+            ...prev,
+            timeOfDay: p.timeOfDay ?? prev.timeOfDay,
+            timeHour: p.timeOfDay === 'day' ? 12 : p.timeOfDay === 'evening' ? 18 : 23,
+          }));
+          break;
+        case 'TRIGGER_EVENT':
+          triggerEvent(p.eventType);
+          break;
+        case 'CREATE_FLOOR':
+          createNextFloor();
+          break;
+        case 'DESTROY_FLOOR':
+          destroyUpperFloor(Number(p.floorNumber));
+          break;
+        case 'EVICT_RESIDENT':
+          evictResident(String(p.residentId));
+          break;
+        case 'BOOST_STABILITY':
+          boostStability(String(p.residentId), Number(p.amount) || 25);
+          break;
+        case 'RESET_LIVE':
+          resetLiveSession(p.mode || 'NEW_LIVE');
+          break;
+        case 'JOIN_VIEWER':
+          joinViewer(p.username, p.personality);
+          break;
+        case 'SEND_COMMENT':
+          sendComment(p.username, p.comment);
+          break;
+        case 'SEND_GIFT':
+          sendGift(p.giftId, p.username, p.giftCoins);
+          break;
+        case 'SIMULATE_LIKES':
+          simulateUserLikes(p.username, p.count);
+          break;
+        case 'SIMULATE_SHARE':
+          simulateUserShare(p.username);
+          break;
+        case 'SIMULATE_FOLLOW':
+          simulateUserFollow(p.username);
+          break;
+        default:
+          // Orden desconocida: se ignora en vez de romper.
+          break;
+      }
+    },
+    [
+      triggerEvent,
+      createNextFloor,
+      destroyUpperFloor,
+      evictResident,
+      boostStability,
+      resetLiveSession,
+      joinViewer,
+      sendComment,
+      sendGift,
+      simulateUserLikes,
+      simulateUserShare,
+      simulateUserFollow,
+    ]
+  );
+
+  // Referencia estable para el efecto de sincronizacion, que se declara ARRIBA
+  // (antes de que exista `aplicarOrden`).
+  aplicarOrdenRef.current = aplicarOrden;
 
   return (
     <HotelContext.Provider

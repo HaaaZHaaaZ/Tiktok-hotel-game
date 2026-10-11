@@ -89,11 +89,21 @@ export const HotelView: React.FC = () => {
         const vHeight = viewportRef.current.clientHeight;
         const vWidth = viewportRef.current.clientWidth;
         const bHeight = buildingRef.current.scrollHeight;
-        const bWidth = buildingRef.current.scrollWidth || 480;
-        if (vHeight <= 50 || bHeight <= 50) return;
+        const bWidth = buildingRef.current.scrollWidth;
+        if (vHeight <= 50 || bHeight <= 50 || bWidth <= 50) return;
 
-        const verticalScale = (vHeight - 16) / bHeight;
-        const horizontalScale = (vWidth - 12) / Math.max(bWidth, 460);
+        // Margen alrededor del edificio: es lo que deja ver el CLIMA (la capa
+        // de lluvia/sol ocupa el viewport entero, detras del edificio).
+        const MARGEN_X = 10;
+        const MARGEN_Y = 8;
+
+        const verticalScale = (vHeight - MARGEN_Y * 2) / bHeight;
+        // OJO: antes esto era `Math.max(bWidth, 460)`, un minimo artificial de
+        // 460px. En un movil (viewport de ~360) el calculo pedia escalar a
+        // 354/460 = 0.77, asi que el hotel se encogia y dejaba ~40px de margen a
+        // cada lado. Con el ancho REAL, el edificio ocupa todo el ancho
+        // disponible y solo queda el margen de arriba.
+        const horizontalScale = (vWidth - MARGEN_X * 2) / bWidth;
         const computed = Math.min(verticalScale, horizontalScale, 1.0);
         const nueva = Math.max(0.35, Math.min(1.0, Number(computed.toFixed(3))));
 
@@ -345,12 +355,21 @@ export const HotelView: React.FC = () => {
       {/* Viewport Container: Centers the entire skyscraper so NO USER is ever left out of frame */}
       <div
         ref={viewportRef}
-        className="relative flex-1 w-full flex flex-col items-center justify-center overflow-hidden p-1 select-none"
+        className="relative flex-1 w-full flex flex-col items-center justify-center overflow-hidden px-2.5 py-1 select-none"
       >
         {/* The Entire Skyscraper Building Facade: Perfectly Scaled to Fit 100% of Residents */}
+        {/*
+          El edificio ocupa TODO el ancho disponible del viewport: `w-full` sin
+          tope. Antes tenia `max-w-[480px]` (y luego 560px), asi que en pantallas
+          anchas se quedaba encajonado y dejaba margenes enormes a los lados.
+
+          El `px-2.5` del contenedor deja la separacion justa para que se vea el
+          CLIMA: la capa de lluvia/sol ocupa el viewport ENTERO, detras del
+          edificio, asi que sin ese margen no se veria nada alrededor.
+        */}
         <div
           ref={buildingRef}
-          className="relative w-full max-w-[480px] flex flex-col shadow-2xl shrink-0"
+          className="relative w-full flex flex-col shadow-2xl shrink-0"
           style={cameraStyle}
         >
           {/* Building Crown & Roof Sign */}

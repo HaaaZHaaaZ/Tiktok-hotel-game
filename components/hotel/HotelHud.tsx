@@ -59,36 +59,26 @@ export const HotelHud: React.FC = () => {
             {state.floors.length} PISOS ACTIVOS
           </span>
 
-          {/* Indicador de sincronia entre dispositivos.
-              Verde + "EN VIVO" = esta pantalla manda (aplica eventos y publica).
-              Azul = esta pantalla solo muestra lo que hace el propietario.
-              Gris = sin conexion con el servidor (sigue funcionando en local). */}
+          {/* Indicador de conexion.
+              Todas las pantallas muestran el MISMO hotel: no hay jerarquia de
+              maestro/espejo. Este indicador solo dice si hay conexion con el
+              servidor (gris = sin conexion, sigue funcionando en local). */}
           <span
             title={
               !syncStatus.online
-                ? 'Sin conexion con el servidor de sincronia. El hotel sigue funcionando en esta pantalla.'
-                : syncStatus.isOwner
-                ? 'Esta pantalla MANDA: aplica los eventos del live y reparte los cambios.'
-                : 'Esta pantalla sigue al dispositivo que manda. Los cambios se ven aqui en tiempo real.'
+                ? 'Sin conexion con el servidor. El hotel sigue funcionando en esta pantalla.'
+                : 'Conectado: esta pantalla muestra el mismo hotel que las demas.'
             }
             className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border font-bold ${
               !syncStatus.online
                 ? 'bg-slate-800/90 text-slate-400 border-slate-700'
-                : syncStatus.isOwner
-                ? 'bg-emerald-900/90 text-emerald-300 border-emerald-500/60'
-                : 'bg-sky-900/90 text-sky-300 border-sky-500/60'
+                : 'bg-emerald-900/90 text-emerald-300 border-emerald-500/60'
             }`}
           >
             <span className={syncStatus.online ? 'animate-pulse' : ''}>
-              {!syncStatus.online ? '⚪' : syncStatus.isOwner ? '🟢' : '🔵'}
+              {!syncStatus.online ? '⚪' : '🟢'}
             </span>
-            <span>
-              {!syncStatus.online
-                ? 'SIN SYNC'
-                : syncStatus.isOwner
-                ? 'EN VIVO'
-                : 'ESPEJO'}
-            </span>
+            <span>{!syncStatus.online ? 'SIN SYNC' : 'EN VIVO'}</span>
             {syncStatus.peers > 1 && (
               <span className="text-[8px] opacity-80">· {syncStatus.peers}📱</span>
             )}

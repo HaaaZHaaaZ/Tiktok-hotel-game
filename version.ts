@@ -9,9 +9,13 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.10.09-17';
+export const APP_VERSION = '2026.10.11-1';
 
 export const APP_VERSION_NOTES = [
+  'fix: un solo hotel compartido, sin hoteles paralelos que se peleen',
+  'fix: el tiempo de duracion ya no oscila entre 30 y 10 al configurarlo',
+  'fix: las ordenes del panel se aplican de verdad (el codigo era inalcanzable)',
+  'hotel mas ancho: ocupa todo el borde, con margen para ver el clima',
   'fix conexion: bufferutil dejaba el socket muerto a los ~20s',
   'globos de comentarios: uno solo, 2.8s sobre su autor',
   'contador de likes por usuario en su habitacion',

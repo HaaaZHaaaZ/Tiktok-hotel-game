@@ -98,23 +98,40 @@ código; respétalas al modificar.
    nativa *opcional* de `ws`. Si el bundler la resuelve a un módulo vacío, el
    socket muere a los ~20 s. Ver `next.config.ts` y las banderas `WS_NO_*`.
 
-6. **Solo el propietario aplica lo automático.** En la sincronía entre
-   dispositivos, una sola pantalla aplica los eventos del live y corre el reloj.
-   Si cada pestaña lo hiciera, un espectador entraría una vez por pestaña y el
-   reloj correría N veces más rápido.
+6. **Un solo hotel: el panel NO tiene estado propio.** Todas las pantallas leen
+   el mismo estado del servidor. Solo la pantalla del hotel lo publica (lo
+   concede el servidor con `claimWriter`), y el panel de administración manda
+   **órdenes** (`UPDATE_RULES`, `SET_WEATHER`, `TRIGGER_EVENT`...) que esa
+   pantalla aplica. Si el panel escribiera su propio hotel, los dos reescribirían
+   el mismo campo y el valor oscilaría entre las dos versiones (el «pongo 10 y
+   cambia solo entre 30 y 10»).
+   **Que una sola pantalla aplique los eventos del live NO es una jerarquía
+   visible**: es lo que impide que un espectador entre una vez por pestaña
+   abierta y que el reloj de estadía corra N veces más rápido.
 
-7. **La marca de pertenencia va en la entidad poseída.** Cuando una habitación es
+7. **Un input de administración NO se ata al estado del servidor.** El valor
+   tarda en ir y volver (orden → el hotel la aplica → publica → el poll la
+   devuelve, ~1.5 s), más de lo que React tarda en repintar: el campo se
+   reseteaba al valor viejo mientras se escribía. Usar estado **local** y adoptar
+   el del servidor solo cuando el usuario no está editando (`onFocus`/`onBlur`).
+
+8. **Nada de código después del `return`.** El bloque `aplicarOrden` vivía
+   después del `return` del componente (código inalcanzable), así que el panel
+   mandaba órdenes y **nadie las aplicaba nunca**. Si algo «no hace nada», mirar
+   primero si está después del `return`.
+
+9. **La marca de pertenencia va en la entidad poseída.** Cuando una habitación es
    absorbida por una suite, la marca vive en la **habitación**
    (`Room.absorbedBy`), no en el residente: si el residente desaparece, la
    habitación quedaría huérfana y visible.
 
-8. **Sanear el estado restaurado al cargar**, no parchear cada lectura. Un estado
-   viejo (sin un campo nuevo) puede tumbar la app entera.
+10. **Sanear el estado restaurado al cargar**, no parchear cada lectura. Un estado
+    viejo (sin un campo nuevo) puede tumbar la app entera.
 
-9. **Reutilizar el espacio de UI existente antes de añadir paneles.** Los paneles
-   laterales le roban ancho al edificio y en móvil lo sacan de pantalla.
+11. **Reutilizar el espacio de UI existente antes de añadir paneles.** Los paneles
+    laterales le roban ancho al edificio y en móvil lo sacan de pantalla.
 
-10. **Subir `APP_VERSION` en cada despliegue.** Es lo primero que hay que mirar
+12. **Subir `APP_VERSION` en cada despliegue.** Es lo primero que hay que mirar
     si alguien dice «lo veo igual».
 
 ## Build y despliegue

@@ -6,7 +6,7 @@ import { useHotel, HotelProvider } from '../../context/HotelContext';
 import { PersonalityType, GlobalEventType, TimeOfDay, EntryRulesConfig } from '../../types/hotel';
 import { APP_VERSION, APP_VERSION_NOTES } from '../../version';
 import { DEFAULT_GIFT_RULES } from '../../services/tiktokProvider';
-import { hotelBroadcast } from '../../services/broadcastSync';
+import { hotelSync } from '../../services/hotelSync';
 import { tiktokLiveConnector, TikTokLiveStatus } from '../../services/tiktokLiveConnector';
 import { TikTokLiveFrame } from '../../components/hotel/TikTokLiveFrame';
 import { TikTokLogPanel } from '../../components/admin/TikTokLogPanel';
@@ -17,34 +17,130 @@ import { AdminLogin } from '../../components/admin/AdminLogin';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Ventana de gracia tras editar un campo de reglas.
+ *
+ * Dentro de este tiempo, el valor del servidor NO pisa lo que el usuario acaba
+ * de escribir: el viaje de ida y vuelta (orden -> el hotel la aplica -> publica
+ * -> el poll la devuelve) tarda mas de lo que tarda en llegar el blur.
+ */
+const GRACIA_EDICION_MS = 3000;
+
 const AdminPanelContent: React.FC = () => {
   const [showHotelPreview, setShowHotelPreview] = useState(false);
   const {
     state,
-    joinViewer,
-    sendComment,
-    sendGift,
-    triggerEvent,
-    setTimeOfDay,
-    createNextFloor,
-    destroyUpperFloor,
-    evictResident,
-    upgradeResidentRoom,
-    promoteToVip,
-    boostStability,
-    resetLiveSession,
-    toggleAutoSimulation,
     isAutoSimulating,
     isAudioMuted,
     setIsAudioMuted,
     isSpeechMuted,
     setIsSpeechMuted,
-    updateEntryRules,
-    setWeather,
-    simulateUserShare,
-    simulateUserLikes,
-    simulateUserFollow,
   } = useHotel();
+
+  // ====================================================================
+  // ESTADO LOCAL DE EDICION (evita el "escribo 10 y vuelve a 30")
+  //
+  // Los campos de reglas son controlados, pero el valor viaja al hotel por el
+  // servidor: orden -> pantalla del hotel la aplica -> publica -> el poll la
+  // devuelve. Ese viaje tarda mas de lo que tarda React en repintar, asi que un
+  // input atado directamente al estado del servidor se resetea al valor viejo
+  // mientras escribes: es el parpadeo entre 30 y 10.
+  //
+  // Solucion: el input se ata a un valor LOCAL que se actualiza al instante, y
+  // solo adopta el del servidor cuando ese valor CAMBIA de verdad y el usuario
+  // no acaba de escribir.
+  //
+  // Dos detalles que importan y que costaron un intento cada uno:
+  //
+  //  - NO basta con mirar `state.entryRules`: en cada poll el panel adopta un
+  //    objeto de estado NUEVO, asi que la referencia cambia aunque el contenido
+  //    sea identico. Un `useEffect` con esa dependencia se dispara cada 1.2s y
+  //    reescribe el valor local -> el input oscila igual. Hay que comparar por
+  //    VALOR.
+  //  - NO basta con `onFocus`/`onBlur`: al escribir con el teclado y hacer clic
+  //    fuera en el mismo tick, el blur llega antes que la respuesta del
+  //    servidor. Se usa una ventana de gracia por tiempo desde la ultima
+  //    edicion, que es robusta frente al orden de los eventos.
+  // ====================================================================
+  const entryRulesServidor = state.entryRules;
+  const [entryRulesLocal, setEntryRulesLocal] = useState<EntryRulesConfig>(entryRulesServidor);
+
+  /** Momento de la ultima edicion del usuario (0 = nunca). */
+  const ultimaEdicionRef = React.useRef(0);
+  /** Ultimo valor que vino del servidor, para detectar cambios REALES. */
+  const ultimoServidorRef = React.useRef('');
+
+  React.useEffect(() => {
+    const firma = JSON.stringify(entryRulesServidor ?? {});
+    // Sin cambio real de valor: no se toca el input (evita el bucle por poll).
+    if (firma === ultimoServidorRef.current) return;
+    ultimoServidorRef.current = firma;
+    // Se acaba de editar: se respeta lo que hay escrito.
+    if (Date.now() - ultimaEdicionRef.current < GRACIA_EDICION_MS) return;
+    setEntryRulesLocal(entryRulesServidor);
+  }, [entryRulesServidor]);
+
+  const entryRules = entryRulesLocal;
+
+  /**
+   * Aplica un cambio de reglas: al instante en local, y al servidor por orden.
+   *
+   * No se hace `hotelBroadcast.post`: esa era la segunda via. El panel ya manda
+   * la orden, y publicar ademas por broadcast aplicaba el cambio en su propio
+   * hotel, que luego rebotaba contra el del servidor.
+   */
+  const cambiarReglas = React.useCallback(
+    (parcial: Partial<EntryRulesConfig>) => {
+      ultimaEdicionRef.current = Date.now();
+      setEntryRulesLocal((prev) => ({ ...prev, ...parcial }));
+      void hotelSync.sendOrder('UPDATE_RULES', parcial);
+    },
+    []
+  );
+
+  // ====================================================================
+  // PUENTE DEL PANEL -> HOTEL
+  //
+  // El panel esta en modo `admin`, es decir: NO tiene hotel propio. Si sus
+  // botones cambiaran el estado de su propia instancia, ese cambio se quedaria
+  // en esta pantalla y no llegaria al hotel que se emite (y, peor, al publicar
+  // pelearia con el por el estado: es el "pongo 10 y cambia solo entre 30 y 10").
+  //
+  // Lo que hace cada accion es mandar una ORDEN al servidor. La pantalla del
+  // hotel la recibe, la aplica sobre el estado real y lo publica. Un solo
+  // escritor, asi que no hay nada que pelear.
+  //
+  // Las funciones locales tambien se llaman (donde tienen sentido) para que el
+  // panel refleje el cambio al instante mientras el hotel responde, pero la
+  // fuente de verdad siempre es la orden.
+  // ====================================================================
+  const orden = React.useCallback(
+    (type: string, payload: any = {}) => {
+      void hotelSync.sendOrder(type, payload);
+    },
+    []
+  );
+
+  const accionesAdmin = React.useMemo(
+    () => ({
+      updateEntryRules: (p: Partial<EntryRulesConfig>) => orden('UPDATE_RULES', p),
+      setWeather: (w: string) => orden('SET_WEATHER', { weather: w }),
+      setTimeOfDay: (t: TimeOfDay | string) => orden('SET_TIME', { timeOfDay: t }),
+      triggerEvent: (e: GlobalEventType | string) => orden('TRIGGER_EVENT', { eventType: e }),
+      createNextFloor: (..._a: any[]) => orden('CREATE_FLOOR'),
+      destroyUpperFloor: (n?: number) => orden('DESTROY_FLOOR', { floorNumber: n ?? 0 }),
+      evictResident: (id?: string) => orden('EVICT_RESIDENT', { residentId: id ?? '' }),
+      boostStability: (id?: string, a?: number) => orden('BOOST_STABILITY', { residentId: id ?? '', amount: a ?? 25 }),
+      resetLiveSession: (m?: 'NEW_LIVE' | 'CONTINUE_LIVE') => orden('RESET_LIVE', { mode: m ?? 'NEW_LIVE' }),
+      joinViewer: (u?: string, p?: PersonalityType) => orden('JOIN_VIEWER', { username: u ?? '', personality: p }),
+      sendComment: (u?: string, c?: string) => orden('SEND_COMMENT', { username: u ?? '', comment: c ?? '' }),
+      sendGift: (g: string, u?: string, c?: number) => orden('SEND_GIFT', { giftId: g, username: u ?? '', giftCoins: c ?? 0 }),
+      simulateUserLikes: (u?: string, n?: number) => orden('SIMULATE_LIKES', { username: u ?? '', count: n ?? 1 }),
+      simulateUserShare: (u?: string) => orden('SIMULATE_SHARE', { username: u ?? '' }),
+      simulateUserFollow: (u?: string) => orden('SIMULATE_FOLLOW', { username: u ?? '' }),
+    }),
+    [orden]
+  );
 
   const [activeAdminTab, setActiveAdminTab] = useState<
     'tiktok' | 'log' | 'rules' | 'residents' | 'events' | 'gifts'
@@ -73,17 +169,7 @@ const AdminPanelContent: React.FC = () => {
   const [selectedResidentId, setSelectedResidentId] = useState<string>('');
 
   const residentsList = Object.values(state.residents);
-  const entryRules = state.entryRules || {
-    entryMode: 'ANY_COMMENT',
-    keyword: '!entrar',
-    likesRequired: 20,
-    sharesRequired: 1,
-    requireFollow: false,
-    minGiftCoins: 1,
-    autoApprove: true,
-    welcomeMessage: '¡Bienvenido al hotel! Tu habitación te espera.',
-    residentStaySeconds: 0,
-  };
+  // `entryRules` se declara arriba, atado al estado local de edicion.
 
   const addLog = (type: string, text: string) => {
     setLiveEventLogs((prev) => [
@@ -121,10 +207,7 @@ const AdminPanelContent: React.FC = () => {
       if (res.isConnected) {
         setConnectionError(null);
         addLog('success', `¡Conectado exitosamente al directo de ${res.streamer}!`);
-        hotelBroadcast.post({
-          type: 'JOIN_VIEWER',
-          payload: { username: res.streamer.replace('@', '') },
-        });
+
       } else {
         setConnectionError(res.error || 'No se pudo conectar. Verifica que el nombre de usuario sea válido y esté activo.');
         addLog('error', `Error conectando con TikTok: ${res.error || 'Revisa tu usuario'}`);
@@ -147,11 +230,8 @@ const AdminPanelContent: React.FC = () => {
     e.preventDefault();
     if (!newUsername.trim()) return;
     const uname = newUsername.trim().replace(/^@/, '');
-    joinViewer(uname, newPersonality);
-    hotelBroadcast.post({
-      type: 'JOIN_VIEWER',
-      payload: { username: uname, personality: newPersonality },
-    });
+    accionesAdmin.joinViewer(uname, newPersonality);
+
     addLog('join', `Nuevo residente creado: @${uname} (${newPersonality})`);
     setNewUsername('');
   };
@@ -161,41 +241,29 @@ const AdminPanelContent: React.FC = () => {
     if (!commentText.trim()) return;
     const targetRes = residentsList.find((r) => r.id === selectedResidentId);
     const uname = targetRes?.username;
-    sendComment(uname, commentText.trim());
-    hotelBroadcast.post({
-      type: 'SEND_COMMENT',
-      payload: { username: uname, comment: commentText.trim() },
-    });
+    accionesAdmin.sendComment(uname, commentText.trim());
+
     addLog('comment', `Comentario de @${uname || 'usuario'}: "${commentText.trim()}"`);
     setCommentText('');
   };
 
   const handleTriggerDemolition = (floorNum: number) => {
     if (confirm(`¿Estás seguro de iniciar la demolición con grietas y fallos de luz del Piso ${floorNum}?`)) {
-      destroyUpperFloor(floorNum);
-      hotelBroadcast.post({
-        type: 'DESTROY_FLOOR',
-        payload: { floorNumber: floorNum },
-      });
+      accionesAdmin.destroyUpperFloor(floorNum);
+
       addLog('alert', `Demolición iniciada en Piso ${floorNum} con grietas y apagón`);
     }
   };
 
   const handleBroadcastEvent = (ev: GlobalEventType) => {
-    triggerEvent(ev);
-    hotelBroadcast.post({
-      type: 'TRIGGER_EVENT',
-      payload: { eventType: ev },
-    });
+    accionesAdmin.triggerEvent(ev);
+
     addLog('event', `Evento global lanzado: ${ev}`);
   };
 
   const handleBroadcastTime = (time: TimeOfDay) => {
-    setTimeOfDay(time);
-    hotelBroadcast.post({
-      type: 'SET_TIME',
-      payload: { timeOfDay: time },
-    });
+    accionesAdmin.setTimeOfDay(time);
+
     addLog('time', `Ciclo horario cambiado a: ${time}`);
   };
 
@@ -253,8 +321,8 @@ const AdminPanelContent: React.FC = () => {
           <button
             onClick={() => {
               if (confirm('¿Deseas reiniciar la sesión del hotel a su estado inicial?')) {
-                resetLiveSession('NEW_LIVE');
-                hotelBroadcast.post({ type: 'RESET_LIVE', payload: { mode: 'NEW_LIVE' } });
+                accionesAdmin.resetLiveSession('NEW_LIVE');
+
                 addLog('reset', 'Sesión de LIVE reiniciada');
               }
             }}
@@ -324,11 +392,8 @@ const AdminPanelContent: React.FC = () => {
             onClick={() => {
               const randomNames = ['pedrito_gamer', 'laura_dance', 'carlos_pro', 'sofi_flow', 'mateo_tt', 'camila_live', 'lucas_ok', 'valen_star'];
               const u = randomNames[Math.floor(Math.random() * randomNames.length)] + '_' + Math.floor(10 + Math.random() * 90);
-              joinViewer(u);
-              hotelBroadcast.post({
-                type: 'JOIN_VIEWER',
-                payload: { username: u },
-              });
+              accionesAdmin.joinViewer(u);
+
               addLog('join', `¡Simulado nuevo usuario! @${u} entra por recepción para que Don Pepe le asigne habitación.`);
             }}
             className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-lg transition-all border border-emerald-400"
@@ -351,7 +416,7 @@ const AdminPanelContent: React.FC = () => {
 
           <button
             onClick={() => {
-              simulateUserLikes(undefined, 50);
+              accionesAdmin.simulateUserLikes(undefined, 50);
               addLog('like', 'Simulados 50 Likes en pantalla');
             }}
             className="bg-slate-800 hover:bg-slate-700 text-rose-300 font-bold px-3 py-2 rounded-xl text-xs border border-slate-700 transition-all"
@@ -362,7 +427,7 @@ const AdminPanelContent: React.FC = () => {
 
           <button
             onClick={() => {
-              simulateUserShare();
+              accionesAdmin.simulateUserShare();
               addLog('share', 'Simulado compartir directo');
             }}
             className="bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold px-3 py-2 rounded-xl text-xs border border-slate-700 transition-all"
@@ -726,8 +791,8 @@ const AdminPanelContent: React.FC = () => {
                   key={m.id}
                   onClick={() => {
                     const updated = { entryMode: m.id as EntryRulesConfig['entryMode'] };
-                    updateEntryRules(updated);
-                    hotelBroadcast.post({ type: 'UPDATE_RULES', payload: { rules: updated } });
+                    cambiarReglas(updated);
+
                     addLog('rules', `Modo de entrada cambiado a: ${m.id}`);
                   }}
                   className={`p-3 rounded-xl border cursor-pointer transition-all ${
@@ -753,8 +818,7 @@ const AdminPanelContent: React.FC = () => {
                   value={entryRules.keyword}
                   onChange={(e) => {
                     const updated = { keyword: e.target.value };
-                    updateEntryRules(updated);
-                    hotelBroadcast.post({ type: 'UPDATE_RULES', payload: { rules: updated } });
+                    cambiarReglas(updated);
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-amber-300 font-mono"
                 />
@@ -766,8 +830,7 @@ const AdminPanelContent: React.FC = () => {
                   value={entryRules.likesRequired}
                   onChange={(e) => {
                     const updated = { likesRequired: Number(e.target.value) || 1 };
-                    updateEntryRules(updated);
-                    hotelBroadcast.post({ type: 'UPDATE_RULES', payload: { rules: updated } });
+                    cambiarReglas(updated);
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-amber-300 font-mono"
                 />
@@ -791,11 +854,10 @@ const AdminPanelContent: React.FC = () => {
                       min="0"
                       step="1"
                       value={entryRules.residentStaySeconds ?? 0}
-                      onChange={(e) => {
+                              onChange={(e) => {
                         const secs = Math.max(0, parseInt(e.target.value, 10) || 0);
                         const updated = { residentStaySeconds: secs };
-                        updateEntryRules(updated);
-                        hotelBroadcast.post({ type: 'UPDATE_RULES', payload: { rules: updated } });
+                        cambiarReglas(updated);
                         addLog('rules', `Tiempo de estancia configurado a: ${secs === 0 ? 'Infinito / Permanente' : `${secs} segundos`}`);
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-amber-300 font-mono font-bold focus:outline-none focus:border-amber-400"
@@ -820,8 +882,7 @@ const AdminPanelContent: React.FC = () => {
                       type="button"
                       onClick={() => {
                         const updated = { residentStaySeconds: p.secs };
-                        updateEntryRules(updated);
-                        hotelBroadcast.post({ type: 'UPDATE_RULES', payload: { rules: updated } });
+                        cambiarReglas(updated);
                         addLog('rules', `Tiempo de estancia configurado a: ${p.secs === 0 ? 'Infinito / Permanente' : `${p.secs} segundos`}`);
                       }}
                       className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
@@ -851,8 +912,8 @@ const AdminPanelContent: React.FC = () => {
                 <button
                   onClick={() => {
                     const u = `usuario_${Math.floor(100 + Math.random() * 900)}`;
-                    joinViewer(u);
-                    hotelBroadcast.post({ type: 'JOIN_VIEWER', payload: { username: u } });
+                    accionesAdmin.joinViewer(u);
+
                     addLog('join', `Simulado ingreso de @${u}`);
                   }}
                   className="w-full bg-emerald-700/80 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs"
@@ -861,7 +922,7 @@ const AdminPanelContent: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    simulateUserShare();
+                    accionesAdmin.simulateUserShare();
                     addLog('share', 'Simulada compartida de LIVE');
                   }}
                   className="w-full bg-blue-700/80 hover:bg-blue-600 text-white font-bold py-2 rounded-xl text-xs"
@@ -870,7 +931,7 @@ const AdminPanelContent: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    simulateUserLikes(undefined, entryRules.likesRequired);
+                    accionesAdmin.simulateUserLikes(undefined, entryRules.likesRequired);
                     addLog('like', `Simulados ${entryRules.likesRequired} Likes`);
                   }}
                   className="w-full bg-rose-700/80 hover:bg-rose-600 text-white font-bold py-2 rounded-xl text-xs"
@@ -879,7 +940,7 @@ const AdminPanelContent: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    simulateUserFollow();
+                    accionesAdmin.simulateUserFollow();
                     addLog('follow', 'Simulado nuevo seguidor');
                   }}
                   className="w-full bg-purple-700/80 hover:bg-purple-600 text-white font-bold py-2 rounded-xl text-xs"
@@ -981,13 +1042,13 @@ const AdminPanelContent: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => boostStability(res.id, 25)}
+                      onClick={() => accionesAdmin.boostStability(res.id, 25)}
                       className="bg-emerald-800/80 hover:bg-emerald-700 text-emerald-200 text-[10px] font-bold px-2 py-1 rounded"
                     >
                       +⚡
                     </button>
                     <button
-                      onClick={() => evictResident(res.id)}
+                      onClick={() => accionesAdmin.evictResident(res.id)}
                       className="bg-rose-900/80 hover:bg-rose-800 text-rose-200 text-[10px] font-bold px-2 py-1 rounded"
                     >
                       Desalojar
@@ -1035,8 +1096,8 @@ const AdminPanelContent: React.FC = () => {
             <div className="border-t border-slate-800 pt-3">
               <button
                 onClick={() => {
-                  createNextFloor();
-                  hotelBroadcast.post({ type: 'CREATE_FLOOR' });
+                  accionesAdmin.createNextFloor();
+
                   addLog('floor', 'Nuevo piso construido');
                 }}
                 className="bg-emerald-700 hover:bg-emerald-600 text-white font-black px-4 py-2 rounded-xl text-xs"
@@ -1099,8 +1160,8 @@ const AdminPanelContent: React.FC = () => {
                   <button
                     key={w.id}
                     onClick={() => {
-                      setWeather(w.id as any);
-                      hotelBroadcast.post({ type: 'SET_WEATHER', payload: { weather: w.id as any } });
+                      accionesAdmin.setWeather(w.id as any);
+
                       addLog('weather', `Clima cambiado a: ${w.name}`);
                     }}
                     className={`p-2 rounded-lg border text-xs font-bold text-center transition-all ${
@@ -1131,8 +1192,8 @@ const AdminPanelContent: React.FC = () => {
               <button
                 key={gift.id}
                 onClick={() => {
-                  sendGift(gift.id);
-                  hotelBroadcast.post({ type: 'SEND_GIFT', payload: { giftId: gift.id } });
+                  accionesAdmin.sendGift(gift.id);
+
                   addLog('gift', `Regalo enviado: ${gift.name} (${gift.costCoins} coins)`);
                 }}
                 className="bg-slate-950 hover:bg-slate-800 border border-slate-700 p-3 rounded-xl flex flex-col items-center gap-1.5 transition-all text-center shadow-sm"
@@ -1184,7 +1245,7 @@ export default function AdminPage() {
 
   return (
     <ErrorBoundary etiqueta="admin">
-      <HotelProvider>
+      <HotelProvider modo="admin">
         <AdminPanelContent />
       </HotelProvider>
     </ErrorBoundary>

@@ -8,8 +8,12 @@ export const TikTokLiveFrame: React.FC<{ children: React.ReactNode }> = ({ child
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-950 overflow-hidden">
-      {/* 9:16 Aspect Ratio Canvas Container (1080 x 1920 logical proportions) */}
-      <div className="relative w-full max-w-[500px] h-[96vh] max-h-[960px] aspect-[9/16] bg-slate-900 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] border-4 border-slate-800 overflow-hidden flex flex-col">
+      {/* 9:16 Aspect Ratio Canvas Container (1080 x 1920 logical proportions)
+          Se mantiene el 9:16 porque es el formato vertical del directo de TikTok,
+          pero sin tope de ancho artificial: la altura manda y el ancho sale del
+          ratio. Con `max-w-[500px]` el marco se quedaba estrecho en pantallas
+          anchas y el hotel no llegaba a los bordes. */}
+      <div className="relative w-full max-w-[680px] h-[96vh] max-h-[960px] aspect-[9/16] bg-slate-900 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] border-4 border-slate-800 overflow-hidden flex flex-col">
         {/* Core Game View Area */}
         <div className="relative flex-1 w-full h-full overflow-hidden flex flex-col">
           {children}

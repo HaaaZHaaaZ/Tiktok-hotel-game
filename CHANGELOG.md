@@ -12,6 +12,55 @@ comprobar de un vistazo que lo desplegado es lo que se está probando.
 
 ---
 
+## 2026.10.11-1 — Un solo hotel, y las órdenes del panel por fin se aplican
+
+**El problema:** al poner el tiempo de duración en 10, el campo oscilaba solo
+entre 30 y 10 sin parar. Y en general las configuraciones parecían pelear entre
+sí.
+
+- **Causa 1 — dos escritores.** Cada pantalla publicaba su hotel ENTERO, y el
+  panel de administración montaba también un hotel completo con sus propias
+  reglas por defecto (30 s). Los dos escribían el mismo campo con su versión, así
+  que el valor rebotaba entre las dos. Ahora hay **un solo hotel, en el
+  servidor**: el panel no tiene hotel propio, solo lee el estado y manda
+  órdenes.
+- **Causa 2 — doble vía.** El panel mandaba la orden *y además* publicaba por
+  `BroadcastChannel`, que su propio contexto aplicaba al instante. Se elimina la
+  segunda vía: 17 llamadas `hotelBroadcast.post` fuera del panel.
+- **Causa 3 — el input era controlado sobre un viaje de ida y vuelta.** El valor
+  tarda (orden → el hotel la aplica → publica → el poll la devuelve, ~1.5 s) más
+  de lo que React tarda en repintar, así que el input se reseteaba al valor viejo
+  mientras se escribía. Ahora el campo se ata a un valor **local** que se
+  actualiza al instante, y adopta el del servidor solo cuando no se está
+  escribiendo.
+- **Causa 4 — las órdenes no se aplicaban NUNCA.** El bloque `aplicarOrden`
+  estaba declarado **después del `return`** del componente: código inalcanzable.
+  El panel mandaba órdenes y nadie las ejecutaba. Movido antes del `return`.
+- **Causa 5 — el servidor descartaba `entryRules`.** En cada `push` sin cookie
+  de admin, el servidor restauraba los ajustes de administración que ya tenía.
+  Ahora los ajustes de admin viajan como órdenes (que sí exigen sesión), y el
+  `push` solo se acepta de la pantalla que escribe.
+- **El `push` ya no lo acepta cualquiera.** Antes cualquier pestaña podía
+  reescribir el hotel entero. Ahora solo la pantalla que es el escritor.
+- **El listener `storage` ya no machaca el estado.** Aplicaba el estado guardado
+  en CUALQUIER pestaña, incluida la que escribía y el panel. Ahora solo en las
+  que no escriben.
+- **Se acaba la jerarquía visible de maestro/espejo.** Todas las pantallas
+  muestran el mismo hotel; el indicador del HUD solo dice si hay conexión. Se
+  elimina el modo `espejo` (no se usaba) y el azul `ESPEJO`.
+- **El hotel ocupa todo el ancho.** Tenía `max-w-[480px]` y el cálculo de escala
+  usaba un mínimo artificial de 460 px, así que en móvil se encogía y dejaba
+  ~40 px de margen a cada lado. Ahora usa el ancho REAL del viewport y solo deja
+  la separación justa (10 px) para que se vea el clima, que ocupa el viewport
+  entero por detrás.
+
+> Nota de diseño: sigue habiendo **una** pantalla que aplica los eventos del live
+> y corre el reloj de estadía. No es una jerarquía visible: es lo que impide que
+> un espectador entre una vez por pestaña abierta (con un avatar distinto en cada
+> una) y que el reloj corra N veces más rápido.
+
+---
+
 ## 2026.10.09-11 — Licencia sin uso comercial
 
 - **Cambio de licencia: de MIT a PolyForm Noncommercial 1.0.0.** MIT permitía
