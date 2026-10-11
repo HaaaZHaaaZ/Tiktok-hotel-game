@@ -1,11 +1,20 @@
 # 🏨 TikTok Hotel — Juego Interactivo para TikTok LIVE
 
+[![Licencia: MIT](https://img.shields.io/badge/Licencia-MIT-blue.svg)](LICENSE)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.10.09--9-green.svg)](CHANGELOG.md)
+
 Hotel virtual 2D en tiempo real que se construye con la audiencia de un directo de
 TikTok. Los espectadores entran comentando, reciben una habitación, suben de piso,
 ganan superpoderes con sus likes y pueden ser desalojados (literalmente: caen por
 la fachada).
 
 Pensado para emitir en vertical (9:16), como capa visual de un LIVE de TikTok.
+
+> **¿Eres un agente de IA?** Lee [`AGENTS.md`](AGENTS.md) antes de tocar el
+> código: tiene las reglas que no se deben romper, el mapa del proyecto y el
+> diagnóstico de los fallos ya encontrados.
+>
+> **¿Buscas qué cambió?** [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -101,6 +110,34 @@ Navegador  ──POST /api/tiktok/connect──▶  Bridge (globalThis)
 | `GET /api/tiktok/webhook` | Eventos nuevos + estado de la conexión |
 | `POST /api/tiktok/webhook` | Ingesta manual (pruebas sin live) |
 | `GET /api/tiktok/log` | Registro de diagnóstico del servidor |
+
+---
+
+## 🔄 Sincronía entre dispositivos
+
+Puedes abrir el hotel en varias pantallas a la vez — el PC emitiendo y el móvil
+para administrar — y **todas muestran el mismo hotel en tiempo real**.
+
+Cómo funciona:
+
+- El **estado canónico vive en el servidor** (`globalThis` + `/api/hotel/sync`).
+  `localStorage` y `BroadcastChannel` solo alcanzan al mismo navegador, así que
+  por sí solos el PC y el móvil divergirían.
+- **Una sola pantalla manda** (aplica los eventos del live y corre el reloj).
+  Las demás son espejo. Sin esto, un espectador entraría una vez por pestaña
+  abierta y el reloj de estadía correría N veces más rápido.
+- Si la pantalla que manda se cierra, **otra toma el control sola** en ~10 s.
+- **Los cambios del panel viajan siempre**, aunque los hagas desde una pantalla
+  espejo.
+
+El HUD indica el rol de cada pantalla:
+
+| Indicador | Significado |
+|---|---|
+| 🟢 **EN VIVO** | Esta pantalla manda |
+| 🔵 **ESPEJO** | Sigue a la que manda |
+| ⚪ **SIN SYNC** | Sin conexión (sigue funcionando en local) |
+| `· 2📱` | Cuántas pantallas están conectadas |
 
 ---
 
@@ -220,4 +257,24 @@ Cosas que costaron tiempo y conviene no volver a romper:
 
 ## 📄 Licencia
 
-Proyecto privado. Todos los derechos reservados.
+**MIT** — puedes usar, copiar, modificar, fusionar, publicar, distribuir,
+sublicenciar y vender este software. Lo único que se pide es conservar el aviso
+de copyright. Ver [`LICENSE`](LICENSE).
+
+> Aviso: este proyecto usa `tiktok-live-connector`, una librería **no oficial**
+> de terceros. No está afiliada ni respaldada por TikTok. El uso de su API no
+> oficial puede contravenir sus Términos de Servicio; cumplirlos es
+> responsabilidad de quien despliega el software.
+
+---
+
+## 👤 Créditos
+
+- **Autor y mantenedor:** Brayan Lopez
+  ([@HaaaZHaaaZ](https://github.com/HaaaZHaaaZ))
+- **Desarrollado con:** [Hermes Agent](https://hermes-agent.nousresearch.com)
+  de [Nous Research](https://nousresearch.com) — arquitectura, depuración y
+  documentación del proyecto.
+
+Si usas este proyecto para algo, se agradece un enlace al repositorio, aunque la
+licencia no lo exija.
