@@ -5,7 +5,7 @@ import { PersonalityType, GlobalEventType, TimeOfDay, EntryRulesConfig, WeatherT
 export type HotelBroadcastMessage =
   | { type: 'JOIN_VIEWER'; payload: { username: string; personality?: PersonalityType; avatar?: any } }
   | { type: 'SEND_COMMENT'; payload: { username?: string; comment: string } }
-  | { type: 'SEND_GIFT'; payload: { giftId: string; username?: string } }
+  | { type: 'SEND_GIFT'; payload: { giftId: string; username?: string; giftCoins?: number } }
   | { type: 'TRIGGER_EVENT'; payload: { eventType: GlobalEventType } }
   | { type: 'SET_TIME'; payload: { timeOfDay: TimeOfDay } }
   | { type: 'SET_WEATHER'; payload: { weather: WeatherType } }

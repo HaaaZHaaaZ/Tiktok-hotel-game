@@ -21,6 +21,7 @@ import {
   SUPERPOWERS,
   STAY_REWARDS,
   GiftDefinition,
+  segundosDeRegalo,
 } from '../types/hotel';
 import { createInitialHotel, createFloorRooms } from '../services/hotelService';
 import { COMANDOS_PODER } from '../services/powerCommands';
@@ -1590,10 +1591,30 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * Vive fuera de `sendGift` porque hay dos caminos que deben producir el mismo
    * resultado: quien dona ya estaba dentro, y quien dona y entra en ese momento.
    */
-  const aplicarRegalo = useCallback((gift: GiftDefinition, residentId: string) => {
+  const aplicarRegalo = useCallback((gift: GiftDefinition, residentId: string, coinsReales?: number) => {
     const s = stateRef.current;
     const targetResident = s.residents[residentId];
     if (!targetResident) return;
+
+    // Valor del regalo: el REAL que manda TikTok (diamantes) si llego, y si no
+    // el nominal de la tabla. Es lo que decide cuanto tiempo regala.
+    const coins = Math.max(1, Number(coinsReales) || gift.costCoins || 1);
+
+    // --- Estadía por regalo: proporcional al VALOR donado ---
+    //
+    // Antes se multiplicaba por el nivel del regalo (small=1s, medium=2s,
+    // large=4s, vip=8s), asi que una Corona de 500 monedas daba 8 veces lo de
+    // una Rosa de 1 moneda: 500 veces el valor por 8 veces el tiempo. Quien
+    // gastaba mucho no lo notaba.
+    //
+    // Ahora manda el valor real (`coins`, los diamantes que envia TikTok), con
+    // la curva suavizada de `segundosDeRegalo`. Con el superpoder Imán, el
+    // triple.
+    //
+    // Se calcula AQUI (fuera del setState) porque la notificacion de mas abajo
+    // tambien lo necesita.
+    const conIman = targetResident.superpowers?.includes('imán') ? 3 : 1;
+    const segundosGanados = segundosDeRegalo(coins) * conIman;
 
     // Sounds & FX based on gift tier
     if (gift.tier === 'small') {
@@ -1638,21 +1659,8 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updatedPenthouse = [...updatedPenthouse, res.id];
       }
 
-      // --- Estadía por regalo ---
-      //
-      // Cada regalo suma segundos, y "van aumentando": el multiplicador crece
-      // con el nivel del regalo (small=1s, medium=2s, large=4s, vip=8s). Con el
-      // superpoder Imán, el triple.
-      const segundosPorNivel: Record<string, number> = {
-        small: 1,
-        medium: 2,
-        large: 4,
-        vip: 8,
-      };
-      const factor = segundosPorNivel[gift.tier] ?? 1;
-      const conIman = res.superpowers?.includes('imán') ? 3 : 1;
-      const segundosGanados = STAY_REWARDS.giftSecondsBase * factor * conIman;
-
+      // La estadía ganada ya se calculó arriba (fuera del setState), porque la
+      // notificación también la necesita.
       const limitado = (Number(prev.entryRules?.residentStaySeconds) || 0) > 0;
       let stayRemaining = res.stayRemainingSec ?? null;
       if (limitado && stayRemaining !== null) {
@@ -1710,16 +1718,17 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    // La notificacion dice cuantos lleva EN TOTAL, no solo el ultimo: asi quien
-    // dona ve que sus regalos se acumulan en vez de perderse uno a uno.
+    // La notificacion dice cuantos lleva EN TOTAL y cuanto tiempo ha ganado:
+    // asi quien dona ve el efecto concreto de su aporte, no solo que "paso algo".
     const totalTrasEste = (targetResident.giftCount || 0) + 1;
+    const minutos = segundosGanados >= 60 ? `+${Math.round(segundosGanados / 60)} min` : `+${segundosGanados}s`;
     addNotification({
       type: 'gift',
       icon: gift.icon,
       text:
         totalTrasEste > 1
-          ? `${targetResident.displayName} recibió ${gift.name}! (${totalTrasEste} regalos en su repisa)`
-          : `${targetResident.displayName} recibió ${gift.name}! Ya tiene su primer trofeo`,
+          ? `${targetResident.displayName} recibió ${gift.name}! ${minutos} de estadía (${totalTrasEste} regalos en su repisa)`
+          : `${targetResident.displayName} recibió ${gift.name}! ${minutos} de estadía. Su primer trofeo`,
     });
 
     if (gift.triggersEvent) {
@@ -1727,7 +1736,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [setCameraFocus, addNotification, triggerEvent]);
 
-  const sendGift = useCallback((giftId: string, username?: string) => {
+  const sendGift = useCallback((giftId: string, username?: string, coinsReales?: number) => {
     const gift = DEFAULT_GIFT_RULES.find((g) => g.id === giftId) || DEFAULT_GIFT_RULES[0];
     const s = stateRef.current;
     const residentsList = Object.values(s.residents);
@@ -1768,7 +1777,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           );
           if (recien) {
             entrega.hecha = true;
-            aplicarRegalo(gift, recien.id);
+            aplicarRegalo(gift, recien.id, coinsReales);
             return;
           }
           // Ultimo intento fallido (no llego a entrar, hotel lleno): el regalo
@@ -1777,7 +1786,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const lista = Object.values(stateRef.current.residents);
             if (lista.length) {
               entrega.hecha = true;
-              aplicarRegalo(gift, lista[Math.floor(Math.random() * lista.length)].id);
+              aplicarRegalo(gift, lista[Math.floor(Math.random() * lista.length)].id, coinsReales);
             }
           }
         }, ms);
@@ -1791,7 +1800,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (!targetResident) return;
-    aplicarRegalo(gift, targetResident.id);
+    aplicarRegalo(gift, targetResident.id, coinsReales);
   }, [setCameraFocus, addNotification, triggerEvent, joinViewer, aplicarRegalo]);
 
 
@@ -2791,7 +2800,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           break;
         case 'SEND_GIFT':
           marcarCambioManual();
-          sendGift(msg.payload.giftId, msg.payload.username);
+          sendGift(msg.payload.giftId, msg.payload.username, (msg.payload as any).giftCoins);
           break;
         case 'TRIGGER_EVENT':
           marcarCambioManual();
@@ -2898,7 +2907,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               sendComment(uname, comment);
             }
           } else if (p.eventType === 'gift') {
-            sendGift(p.giftId || 'gift_rose', p.username);
+            sendGift(p.giftId || 'gift_rose', p.username, p.giftCoins);
           } else if (p.eventType === 'join') {
             // Entrada al room de TikTok (`member`).
             //

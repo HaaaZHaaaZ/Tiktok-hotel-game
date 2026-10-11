@@ -73,6 +73,57 @@ export const STAY_REWARDS = {
   shareSeconds: 0.5,
 } as const;
 
+/**
+ * Cuanto tiempo regala cada moneda de un regalo.
+ *
+ * El tiempo se calcula sobre el VALOR REAL del regalo (los diamantes que manda
+ * TikTok), no sobre su categoria. Antes se usaba solo el nivel
+ * (small/medium/large/vip), y eso hacia que una Corona de 500 monedas diera 8
+ * segundos mientras una Rosa de 1 moneda daba 1: **500 veces mas valor por 8
+ * veces mas tiempo**. Quien gastaba mucho no notaba que su dinero valiera mas.
+ *
+ * Con el valor real, la escala es proporcional: una Rosa (1) da 1 segundo y una
+ * Corona (500) da 500. Es lo que hace que donar mas se sienta como donar mas.
+ *
+ * La raiz cuadrada SUAVIZA la curva. Sin ella, un Leon de 1000 monedas daria
+ * 1000 segundos (casi 17 minutos) y un solo regalo romperia el equilibrio del
+ * hotel: el residente se quedaria para siempre y no dejaria sitio a nadie.
+ * Con la raiz, el mismo Leon da ~316 segundos, que sigue siendo mucho mas que
+ * una Rosa pero deja el juego jugable.
+ */
+export const GIFT_VALUE = {
+  /** Segundos por unidad de valor, antes de suavizar. */
+  secondsPerCoin: 1,
+  /**
+   * Exponente de suavizado. Es el numero a tocar si el equilibrio no cuadra:
+   *   1.0 = proporcional puro (una Corona de 500 daria 8 minutos: rompe el juego)
+   *   0.6 = recomendado (la Corona da ~41s, el Leon ~1 min)
+   *   0.5 = raiz cuadrada (mas plano: la Corona da 22s)
+   *   0.0 = todos los regalos valen igual (ignora el valor)
+   */
+  exponent: 0.6,
+  /**
+   * Tope de segundos que puede dar un unico regalo. Evita que una donacion
+   * enorme deje a alguien atrincherado en su habitacion para siempre.
+   */
+  maxSecondsPerGift: 600,
+  /** Minimo por regalo, para que hasta el mas barato sume algo visible. */
+  minSecondsPerGift: 1,
+} as const;
+
+/**
+ * Segundos de estadía que aporta un regalo.
+ *
+ * `coins` es el valor real (diamantes). Si no llega, se cae al `costCoins` de la
+ * tabla de regalos, que es el valor nominal.
+ */
+export function segundosDeRegalo(coins: number): number {
+  const valor = Math.max(1, Number(coins) || 1);
+  const bruto = GIFT_VALUE.secondsPerCoin * Math.pow(valor, GIFT_VALUE.exponent);
+  const limitado = Math.min(bruto, GIFT_VALUE.maxSecondsPerGift);
+  return Math.max(GIFT_VALUE.minSecondsPerGift, Math.round(limitado));
+}
+
 export type ActionType =
   | 'idle'
   | 'walking'

@@ -9,7 +9,7 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.10.09-13';
+export const APP_VERSION = '2026.10.09-14';
 
 export const APP_VERSION_NOTES = [
   'fix conexion: bufferutil dejaba el socket muerto a los ~20s',
@@ -29,6 +29,7 @@ export const APP_VERSION_NOTES = [
   'guia para agentes de IA (AGENTS.md) + historico de versiones',
   'fix: el hotel ya no tiembla al construir o derribar un piso (bucle de autoescalado)',
   'regalos: repisa de trofeos permanente en la habitacion + aura en el personaje',
+  'regalos: el tiempo de estadia ahora escala con el VALOR donado (diamantes reales)',
   'fix: fila de Don Pepe desbordada por eventos member',
   'fix: estado viejo tumbaba la app en movil/tablet',
 ] as const;
