@@ -146,6 +146,23 @@ export const HotelView: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [demoliendo, scheduleAutoFit]);
 
+  // Reencuadrar cuando CAMBIA EL CONTENIDO del edificio.
+  //
+  // Antes solo se recalculaba al terminar una demolicion. Pero el edificio
+  // tambien crece cuando entra gente (un piso nuevo) o cuando los residentes
+  // reciben regalos y aparecen sus repisas de trofeos. En esos casos la escala
+  // se quedaba en el valor anterior y el edificio se salia del encuadre.
+  //
+  // Se mira `floors.length` (crece al construir) y el numero de residentes (sus
+  // adornos cambian la altura). El retardo deja que el DOM se asiente antes de
+  // medir, y `scheduleAutoFit` ya agrupa por frame y aplica histeresis, asi que
+  // no vuelve a introducir el bucle de realimentacion.
+  const numResidentes = Object.keys(state.residents).length;
+  useEffect(() => {
+    const t = window.setTimeout(() => scheduleAutoFit(), 400);
+    return () => window.clearTimeout(t);
+  }, [floors.length, numResidentes, scheduleAutoFit]);
+
   // Determine active transform based on camera state for dynamic broadcast prominence
   let transformValue = `scale(${autoFitScale})`;
   let transformOriginValue = 'center center';

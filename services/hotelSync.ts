@@ -244,15 +244,30 @@ class HotelSyncService {
       if (typeof d.stateRevision === 'number' && d.stateRevision > this.revision) {
         this.revision = d.stateRevision;
         if (d.state) {
-          // Se marca ANTES de avisar, para que el guardado automatico no
-          // reenvie al servidor lo que acaba de llegar de el (seria un eco
-          // infinito entre pantallas).
-          this.applyingRemote = true;
-          this.lastPushed = safeStringify(d.state);
-          this.stateListeners.forEach((fn) => fn(d.state));
-          window.setTimeout(() => {
-            this.applyingRemote = false;
-          }, 500);
+          // El PROPIETARIO no adopta su propio estado.
+          //
+          // Es la causa del parpadeo continuo con el live conectado: el dueno
+          // aplicaba un evento, publicaba el estado, y en el siguiente poll el
+          // servidor se lo devolvia como "novedad". Adoptarlo creaba un arbol
+          // con referencias nuevas -> React remontaba el edificio entero. Y como
+          // los eventos del live llegan sin parar, el edificio parpadeaba en
+          // cada uno.
+          //
+          // El dueno ya tiene ese estado (es suyo); no necesita re-adoptarlo.
+          // Los espejos SI lo adoptan, que es justo su trabajo.
+          if (this.owner) {
+            this.lastPushed = safeStringify(d.state);
+          } else {
+            // Se marca ANTES de avisar, para que el guardado automatico no
+            // reenvie al servidor lo que acaba de llegar de el (seria un eco
+            // infinito entre pantallas).
+            this.applyingRemote = true;
+            this.lastPushed = safeStringify(d.state);
+            this.stateListeners.forEach((fn) => fn(d.state));
+            window.setTimeout(() => {
+              this.applyingRemote = false;
+            }, 500);
+          }
         }
       } else if (d.stateRevision === 0 && !this.seedAvisado) {
         // El servidor no tiene estado (primer arranque, o se reinicio el

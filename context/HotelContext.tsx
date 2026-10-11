@@ -530,8 +530,24 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const unsubState = hotelSync.onRemoteState((remoto) => {
       if (!remoto || !Array.isArray(remoto.floors)) return;
+      // Un estado sin pisos no puede sustituir a uno que si los tiene: dejaria
+      // el hotel sin edificio (y el autoFit mediria un contenedor vacio). Si el
+      // servidor publica algo asi, se descarta y se conserva lo que hay.
+      if (remoto.floors.length === 0) return;
+
+      // NO pasar el estado remoto por `sanitizeRestoredState`.
+      //
+      // Esa funcion esta pensada para un estado GUARDADO que puede venir de una
+      // version anterior, y reconstruye TODOS los objetos (pisos, habitaciones,
+      // residentes) con spreads nuevos. Al llegar un evento del live, React
+      // recibia un arbol con referencias completamente nuevas y desmontaba y
+      // remontaba el edificio entero en cada evento: es el parpadeo continuo
+      // ("desaparece y vuelve") que se veia con el live conectado.
+      //
+      // El estado que llega del servidor ya viene saneado (se saneo al
+      // publicarlo), asi que aqui solo hay que adoptarlo tal cual.
       setState((prev) => ({
-        ...sanitizeRestoredState(remoto),
+        ...remoto,
         // La camara y la animacion de recepcion son LOCALES: cada pantalla mira
         // donde quiere y no deben saltar cuando otro dispositivo cambia algo.
         camera: prev.camera,
