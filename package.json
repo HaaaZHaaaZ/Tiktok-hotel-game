@@ -1,7 +1,19 @@
 {
-  "name": "ai-studio-applet",
-  "version": "0.1.0",
+  "name": "tiktok-hotel",
+  "version": "1.0.0",
   "private": true,
+  "description": "Hotel 2D en tiempo real para directos de TikTok: los espectadores entran comentando, consiguen habitación, ganan superpoderes con likes y son desalojados cayendo por la fachada.",
+  "keywords": [
+    "tiktok",
+    "tiktok-live",
+    "live-streaming",
+    "nextjs",
+    "react",
+    "typescript",
+    "overlay"
+  ],
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Brayan Lopez (@HaaaZHaaaZ)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
