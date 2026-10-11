@@ -1,7 +1,7 @@
 # 🏨 TikTok Hotel — Juego Interactivo para TikTok LIVE
 
-[![Licencia: MIT](https://img.shields.io/badge/Licencia-MIT-blue.svg)](LICENSE)
-[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.10.09--9-green.svg)](CHANGELOG.md)
+[![Licencia: PolyForm Noncommercial](https://img.shields.io/badge/Licencia-PolyForm%20Noncommercial-orange.svg)](LICENSE)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.10.09--11-green.svg)](CHANGELOG.md)
 
 Hotel virtual 2D en tiempo real que se construye con la audiencia de un directo de
 TikTok. Los espectadores entran comentando, reciben una habitación, suben de piso,
@@ -257,9 +257,24 @@ Cosas que costaron tiempo y conviene no volver a romper:
 
 ## 📄 Licencia
 
-**MIT** — puedes usar, copiar, modificar, fusionar, publicar, distribuir,
-sublicenciar y vender este software. Lo único que se pide es conservar el aviso
-de copyright. Ver [`LICENSE`](LICENSE).
+**PolyForm Noncommercial 1.0.0** — puedes usar, modificar y compartir este
+proyecto libremente, **pero no venderlo** ni usarlo con fines comerciales. Ver
+[`LICENSE`](LICENSE).
+
+**Puedes:**
+- Usarlo en tus directos, aunque el directo esté monetizado.
+- Modificarlo, adaptarlo y hacer obras derivadas.
+- Compartirlo, bajo estas mismas condiciones.
+
+**No puedes:**
+- Venderlo, ni ofrecerlo como producto o servicio de pago.
+- Cobrar por instalarlo, alojarlo o dar soporte sobre él.
+- Usarlo dentro de una empresa con ánimo de lucro.
+
+> ¿Quieres usarlo comercialmente? Escríbeme y lo hablamos.
+
+> **¿Y las mejoras?** Si mejoras algo, se agradece (no se exige) que abras una
+> *pull request*. Este proyecto nace para compartirse.
 
 > Aviso: este proyecto usa `tiktok-live-connector`, una librería **no oficial**
 > de terceros. No está afiliada ni respaldada por TikTok. El uso de su API no
@@ -276,5 +291,17 @@ de copyright. Ver [`LICENSE`](LICENSE).
   de [Nous Research](https://nousresearch.com) — arquitectura, depuración y
   documentación del proyecto.
 
-Si usas este proyecto para algo, se agradece un enlace al repositorio, aunque la
-licencia no lo exija.
+Si usas este proyecto para algo, se agradece un enlace al repositorio.
+
+---
+
+## 🤝 Contribuir
+
+Las mejoras son bienvenidas. Si encuentras un fallo o se te ocurre algo:
+
+1. Abre un *issue* describiendo qué esperabas y qué pasó.
+2. O manda una *pull request* con el cambio.
+3. Un cambio, un commit — y explica **por qué**, no solo qué.
+
+Antes de tocar código, lee [`AGENTS.md`](AGENTS.md): tiene las reglas que no se
+deben romper y los fallos ya encontrados, para que no los repitas.

@@ -12,6 +12,26 @@ comprobar de un vistazo que lo desplegado es lo que se está probando.
 
 ---
 
+## 2026.10.09-11 — Licencia sin uso comercial
+
+- **Cambio de licencia: de MIT a PolyForm Noncommercial 1.0.0.** MIT permitía
+  vender el software; el objetivo del proyecto es que se use y se mejore, no que
+  se revenda.
+  - **Se puede:** usar (también en directos monetizados), modificar, crear obras
+    derivadas y compartir bajo las mismas condiciones.
+  - **No se puede:** venderlo, cobrar por instalarlo/alojarlo/dar soporte, ni
+    usarlo dentro de una empresa con ánimo de lucro.
+  - Se conserva el copyright y el texto íntegro de la licencia oficial.
+- Sección de **contribuir** en el README: las mejoras se piden por *pull
+  request*, sin obligar.
+
+> Nota: al restringir el uso comercial, esta licencia **ya no es de código
+> abierto** según la definición de la OSI (que exige no discriminar por campo de
+> aplicación). Sigue siendo software de fuente abierta y de uso libre para
+> cualquier fin no comercial.
+
+---
+
 ## 2026.10.09-10 — Licencia abierta y documentación
 
 - **Licencia MIT**: el proyecto pasa a ser software libre — se puede usar,

@@ -244,8 +244,11 @@ Se muestra en pantalla.
 
 ## Licencia y créditos
 
-MIT — puedes usarlo, modificarlo y redistribuirlo. Ver `LICENSE`.
+**PolyForm Noncommercial 1.0.0** — puedes usarlo, modificarlo y compartirlo,
+pero **no venderlo** ni darle uso comercial. Ver `LICENSE`.
 
 - **Autor:** Brayan Lopez ([@HaaaZHaaaZ](https://github.com/HaaaZHaaaZ))
 - **Desarrollado con:** [Hermes Agent](https://hermes-agent.nousresearch.com)
   (Nous Research)
+
+Si mejoras algo, se agradece (no se exige) una *pull request*.
