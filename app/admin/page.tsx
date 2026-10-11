@@ -13,6 +13,7 @@ import { TikTokLogPanel } from '../../components/admin/TikTokLogPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { instalarReportes } from '../../services/browserReport';
 import { HotelView } from '../../components/hotel/HotelView';
+import { AdminLogin } from '../../components/admin/AdminLogin';
 
 export const dynamic = 'force-dynamic';
 
@@ -261,6 +262,23 @@ const AdminPanelContent: React.FC = () => {
           >
             <span>🔄</span>
             <span>Reiniciar LIVE</span>
+          </button>
+
+          {/* Cerrar la sesion de administrador. */}
+          <button
+            onClick={async () => {
+              await fetch('/api/admin/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'logout' }),
+              }).catch(() => {});
+              window.location.reload();
+            }}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition-all"
+            title="Cerrar la sesión de administrador en este navegador"
+          >
+            <span>🚪</span>
+            <span>Salir</span>
           </button>
         </div>
       </div>
@@ -1137,6 +1155,33 @@ const AdminPanelContent: React.FC = () => {
 };
 
 export default function AdminPage() {
+  const [autenticado, setAutenticado] = useState(false);
+  const [comprobando, setComprobando] = useState(true);
+
+  // Comprobar la sesion ANTES de montar el panel: montarlo y luego taparlo
+  // dejaria el hotel corriendo en segundo plano y publicando estado.
+  useEffect(() => {
+    fetch('/api/admin/auth', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setAutenticado(!!d?.autenticado))
+      .catch(() => setAutenticado(false))
+      .finally(() => setComprobando(false));
+  }, []);
+
+  if (comprobando) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <span className="text-amber-400 text-sm font-bold animate-pulse">
+          🏨 Comprobando sesión...
+        </span>
+      </div>
+    );
+  }
+
+  if (!autenticado) {
+    return <AdminLogin onAcceso={() => setAutenticado(true)} />;
+  }
+
   return (
     <ErrorBoundary etiqueta="admin">
       <HotelProvider>

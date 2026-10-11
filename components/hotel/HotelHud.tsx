@@ -116,12 +116,8 @@ export const HotelHud: React.FC = () => {
           <span className="text-xs" title={`Hora: ${state.timeOfDay}`}>
             {state.timeOfDay === 'day' ? '☀️' : state.timeOfDay === 'evening' ? '🌇' : '🌙'}
           </span>
-          <a
-            href="/admin"
-            className="text-[9px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-black tracking-wider uppercase transition-colors"
-          >
-            ⚙️ Admin
-          </a>
+          {/* Sin enlace al panel de administracion: esta pantalla la ven los
+              espectadores. El admin entra escribiendo /admin (con contrasena). */}
         </div>
       </div>
 

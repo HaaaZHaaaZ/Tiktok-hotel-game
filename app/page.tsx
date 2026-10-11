@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { useEffect } from 'react';
 import { HotelProvider, useHotel } from '../context/HotelContext';
 import { TikTokLiveFrame } from '../components/hotel/TikTokLiveFrame';
@@ -42,7 +41,10 @@ function HomeLiveScreen() {
       suppressHydrationWarning
       className="relative w-screen h-screen bg-slate-950 flex items-center justify-center overflow-hidden"
     >
-      {/* Discreet Streamer Quick Bar (Hover to reveal or stays subtle in corner) */}
+      {/* Barra discreta del streamer.
+          NO lleva enlace al panel de administracion: los espectadores ven esta
+          misma pantalla, y no deben tener el panel a un clic. El admin entra
+          escribiendo /admin directamente (y con contrasena). */}
       <div className="absolute top-2 right-2 z-50 flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 px-2 py-1.5 rounded-xl shadow-2xl backdrop-blur-md opacity-80 hover:opacity-100 transition-opacity">
         <button
           onClick={handleQuickAdd}
@@ -52,14 +54,6 @@ function HomeLiveScreen() {
           <span>👤</span>
           <span>+ Usuario</span>
         </button>
-
-        <Link
-          href="/admin"
-          className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-2.5 py-1 rounded-lg text-[10px] flex items-center gap-1 shadow-sm transition-all"
-        >
-          <span>⚙️</span>
-          <span>Admin</span>
-        </Link>
       </div>
 
       {/* Main 9:16 Vertical Container for TikTok LIVE Broadcast Window */}

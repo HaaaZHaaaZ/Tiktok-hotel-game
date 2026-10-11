@@ -5,6 +5,7 @@ import {
   countClients,
   isOwnerAlive,
 } from '../../../../services/hotelSyncStore';
+import { sesionAdminValida } from '../../../../services/adminAuth';
 
 /**
  * Sincronizacion del hotel entre dispositivos.
@@ -89,7 +90,24 @@ export async function POST(req: NextRequest) {
   // cliente, que es quien sabe si esta aplicando algo automatico o no.
   if (action === 'push') {
     if (body?.state && typeof body.state === 'object') {
-      s.state = body.state;
+      // El estado que llega de una pantalla de ESPECTADOR no puede traer
+      // cambios de administracion. Sin esta comprobacion, cualquiera con la
+      // pagina abierta podia publicar reglas, clima o demoliciones.
+      //
+      // No se rechaza el estado entero (romperia la sincronia normal), solo se
+      // conservan los ajustes de administracion que ya tenia el servidor.
+      const admin = sesionAdminValida(req);
+      const entrante = body.state;
+      if (!admin && s.state) {
+        // Campos que SOLO el admin puede cambiar.
+        if (s.state.entryRules) entrante.entryRules = s.state.entryRules;
+        if (typeof s.state.weather !== 'undefined') entrante.weather = s.state.weather;
+        if (typeof s.state.timeOfDay !== 'undefined') entrante.timeOfDay = s.state.timeOfDay;
+        if (s.state.globalEvent) entrante.globalEvent = s.state.globalEvent;
+        if (s.state.demolitionState) entrante.demolitionState = s.state.demolitionState;
+      }
+
+      s.state = entrante;
       s.revision += 1;
       s.stateRevision = s.revision;
       s.updatedAt = Date.now();

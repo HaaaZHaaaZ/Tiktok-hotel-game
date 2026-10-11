@@ -29,8 +29,19 @@ export interface HotelSyncStatus {
 }
 
 class HotelSyncService {
-  /** Identidad de esta pestana. Se usa para la propiedad y para contarla. */
-  private clientId = `c_${Math.random().toString(36).slice(2, 10)}`;
+  /**
+   * Identidad de esta PESTANA (no de esta carga de pagina).
+   *
+   * Antes se generaba con `Math.random()` en cada carga del modulo. Como cada
+   * recarga de la pagina vuelve a ejecutar el modulo, cada F5 creaba una
+   * identidad nueva: el servidor las acumulaba y en dos pestanas con varias
+   * recargas se veian 15 "pantallas conectadas" cuando solo habia dos.
+   *
+   * `sessionStorage` es exactamente el ambito que se necesita: sobrevive a las
+   * recargas de la misma pestana, es independiente entre pestanas, y se borra
+   * solo al cerrarla. Asi recargar NO crea una sesion nueva.
+   */
+  private clientId = obtenerClientIdDePestana();
 
   /** Ultima revision conocida: cursor de lectura. */
   private revision = 0;
@@ -156,7 +167,28 @@ class HotelSyncService {
   }
 
   private handleUnload = (): void => {
-    // `keepalive` deja que la peticion salga aunque la pagina se este cerrando.
+    // NO soltar la propiedad al recargar.
+    //
+    // `pagehide` tambien se dispara en un F5, asi que al recargar se soltaba el
+    // mando y otra pantalla lo tomaba; al volver, la primera lo recuperaba. Con
+    // dos pestanas eso es un vaiven constante de propiedad (y cada cambio
+    // reinicia el reloj de estadia en la nueva duena).
+    //
+    // Solo se suelta si la pestana se CIERRA de verdad. `persisted` distingue
+    // el paso a la cache de navegacion (atras/adelante) de un cierre real.
+    // Para el cierre real, el latido caduca solo en 10s: es margen de sobra y
+    // evita el vaiven.
+    try {
+      const nav = performance.getEntriesByType('navigation')[0] as
+        | PerformanceNavigationTiming
+        | undefined;
+      // `reload` = el usuario recargo. No soltar.
+      if (nav && nav.type === 'reload') return;
+    } catch {
+      // Si no se puede saber, se prefiere NO soltar (el latido caduca igual).
+      return;
+    }
+
     try {
       fetch('/api/hotel/sync', {
         method: 'POST',
@@ -288,6 +320,35 @@ function safeStringify(value: any): string {
     return JSON.stringify(value) ?? '';
   } catch {
     return '';
+  }
+}
+
+/** Clave donde se guarda la identidad de la pestaña. */
+const CLIENT_ID_KEY = 'tiktok_hotel_client_id';
+
+/**
+ * Identidad estable de esta pestaña.
+ *
+ * Se guarda en `sessionStorage`, que sobrevive a las recargas pero no se
+ * comparte entre pestañas ni dispositivos, y se borra al cerrar la pestaña.
+ * Es justo el ciclo de vida de una "pantalla conectada".
+ *
+ * Si `sessionStorage` no está disponible (modo privado muy restrictivo, o
+ * bloqueado), se cae a una identidad en memoria: se pierde al recargar, pero la
+ * app sigue funcionando.
+ */
+function obtenerClientIdDePestana(): string {
+  const nuevo = () => `c_${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof window === 'undefined') return nuevo();
+
+  try {
+    const guardado = window.sessionStorage.getItem(CLIENT_ID_KEY);
+    if (guardado) return guardado;
+    const id = nuevo();
+    window.sessionStorage.setItem(CLIENT_ID_KEY, id);
+    return id;
+  } catch {
+    return nuevo();
   }
 }
 

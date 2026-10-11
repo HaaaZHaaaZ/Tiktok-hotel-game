@@ -53,12 +53,6 @@ export const SimulationDock: React.FC = () => {
               </span>
             </div>
             <div className="flex items-center gap-1">
-              <a
-                href="/admin"
-                className="text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 px-2 py-0.5 rounded font-bold border border-amber-400/40"
-              >
-                ⚙️ /admin
-              </a>
               <button
                 onClick={() => setIsOpen(false)}
                 className="text-slate-400 hover:text-white p-1 text-xs"
