@@ -234,6 +234,9 @@ function sanitizeRestoredState(parsed: any): any {
             (t: any) => t && typeof t === 'object' && typeof t.icon === 'string'
           )
         : [],
+      // La marca del watchdog no debe sobrevivir a una recarga: si venia de una
+      // sesion anterior, el residente se consideraria atascado al instante.
+      enteringSince: 0,
       giftCount: Number.isFinite(Number(raw.giftCount)) ? Number(raw.giftCount) : 0,
       // La celebracion si es momentanea.
       giftAt:
@@ -646,6 +649,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * seguirian ejecutandose y aplicarian el regalo a un hotel que ya no existe.
    */
   const timersRegaloRef = useRef<number[]>([]);
+
+  /**
+   * Residentes ya rescatados por el watchdog.
+   *
+   * Solo sirve para no repetir el aviso en el log en cada tick mientras el
+   * residente siga (mal) marcado. Sin esto, un atasco llenaria el registro de
+   * lineas identicas y taparia lo importante.
+   */
+  const rescueLogRef = useRef<Set<string>>(new Set());
 
   // Active Floor view for multi-floor hotels
   const [activeFloorNumber, setActiveFloorNumber] = useState(1);
@@ -1104,6 +1116,9 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       coordX: 50,
       direction: 'right',
       isEntering: true,
+      // Marca de tiempo del inicio del ingreso. La usa el watchdog para saber
+      // cuanto lleva alguien con la bandera puesta y rescatarlo si se cuelga.
+      enteringSince: Date.now(),
       likes: 0,
       superpowers: [],
       stayRemainingSec: stayTotal > 0 ? stayTotal : null,
@@ -1256,6 +1271,8 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             coordX: 50,
             currentAction: 'celebrating',
             isEntering: false,
+            // La entrada termino: se limpia la marca del watchdog.
+            enteringSince: 0,
           },
         },
       };
@@ -2275,6 +2292,69 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const staySecs = Number(s.entryRules?.residentStaySeconds) || 0;
       const limitado = staySecs > 0;
 
+      // ================================================================
+      // WATCHDOG: desatascar a quien se quede EN EL PASILLO.
+      //
+      // El ingreso pasa por 5 pasos encadenados con `await` (mostrador,
+      // ascensor, subida, salida a la habitacion) que en total tardan unos 3.8
+      // segundos. Si la cadena se corta a mitad (una excepcion, un cambio de
+      // estado que deja el objeto obsoleto, el residente se va antes de llegar),
+      // el residente se queda fuera de su habitacion PARA SIEMPRE.
+      //
+      // OJO con donde se actua: SOLO en el pasillo (`corridor`).
+      //
+      //   reception -> LEGITIMO. Esta esperando a que Don Pepe le atienda, y con
+      //                cola eso puede tardar bastante. Rescatarlo aqui seria
+      //                meterlo en su cuarto antes de que le den la llave.
+      //   elevator  -> LEGITIMO. Esta subiendo.
+      //   corridor  -> deberia ser un suspiro; nadie vive ahi. Aqui SI se actua.
+      //
+      // Ese matiz importa: en una prueba con un live real de 18 residentes, el
+      // watchdog marcaba como atascado a uno que estaba en reception esperando
+      // su turno. Era un falso positivo.
+      // ================================================================
+      const ahora = Date.now();
+      // Margen amplio sobre los ~3.8s reales: no se quiere interrumpir una
+      // entrada que va bien, solo rescatar las que se han quedado colgadas.
+      const LIMITE_ATASCO_MS = 12000;
+
+      residentsList.forEach((res) => {
+        // Solo el pasillo. Ver el comentario de arriba.
+        if (res.location !== 'corridor') return;
+
+        // Sin marca de tiempo no se puede saber cuanto lleva: se le da una ahora
+        // y se le da margen, en vez de moverlo a ciegas.
+        const desde = Number((res as any).enteringSince) || 0;
+        if (!desde) {
+          updatedResidents[res.id] = { ...(updatedResidents[res.id] || res), enteringSince: ahora } as any;
+          return;
+        }
+        if (ahora - desde < LIMITE_ATASCO_MS) return;
+
+        // Atascado en el pasillo: se le mete en su habitacion.
+        const suCuarto = s.rooms[res.roomId];
+        updatedResidents[res.id] = {
+          ...(updatedResidents[res.id] || res),
+          isEntering: false,
+          isLeaving: false,
+          enteringSince: 0,
+          location: 'room',
+          currentAction: 'idle',
+          // El piso de su habitacion manda: si quedo en el piso equivocado, el
+          // render lo dibujaria en el pasillo de otro piso.
+          floorNumber: suCuarto?.floorNumber ?? res.floorNumber,
+        } as any;
+
+        if (!rescueLogRef.current.has(res.id)) {
+          rescueLogRef.current.add(res.id);
+          browserReport.warn('watchdog', 'residente atascado en el pasillo; devuelto a su habitacion', {
+            usuario: res.displayName,
+            habitacion: suCuarto?.number ?? null,
+            segundosAtascado: Math.round((ahora - desde) / 1000),
+          });
+        }
+      });
+
       residentsList.forEach((res) => {
         // --- Tiempo de estadía ---
         //
@@ -2367,8 +2447,16 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
 
+        // Se parte de lo que ya haya en `updatedResidents` (puede traer el
+        // rescate del watchdog), NO del `res` original.
+        //
+        // BUG: antes era `...res`, que machacaba cualquier cambio hecho antes en
+        // este mismo tick. El watchdog rescataba a un residente del pasillo y
+        // esta linea lo devolvia al estado atascado un instante despues, asi que
+        // el rescate nunca surtia efecto.
+        const base = updatedResidents[res.id] || res;
         updatedResidents[res.id] = {
-          ...res,
+          ...base,
           stability: newStability,
           stayRemainingSec: limitado ? stayRemaining : null,
           currentAction: nextAction,

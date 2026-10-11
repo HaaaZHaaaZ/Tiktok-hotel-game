@@ -36,10 +36,16 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
     .sort((a, b) => a.number - b.number);
 
   // Corridor residents (walking or emerging from elevator)
+  //
+  // OJO con `isEntering`: durante el ascensor el residente ya va de camino a su
+  // cuarto, y dibujarlo en el pasillo era lo que dejaba personajes "viviendo" en
+  // el pasillo cuando el ultimo paso del ingreso no llegaba a ejecutarse.
+  // Solo se considera pasillo si esta REALMENTE en el pasillo: en `elevator` o
+  // en `reception` esta en otro sitio y ahi se dibuja.
   const corridorResidents = Object.values(residents).filter(
     (res) =>
       res.floorNumber === floor.floorNumber &&
-      (res.location === 'corridor' || res.isEntering || res.isLeaving)
+      res.location === 'corridor'
   );
 
   const isThisFloorDemolishing =

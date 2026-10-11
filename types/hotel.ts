@@ -219,6 +219,15 @@ export interface Resident {
   isEntering?: boolean;
   isLeaving?: boolean;
   /**
+   * Momento en que empezo su ingreso (ms).
+   *
+   * El ingreso pasa por 5 pasos con `await` (~3.8s) y durante todos ellos el
+   * residente lleva `isEntering = true`, que es lo que hace que el render lo
+   * dibuje en el pasillo. Esta marca permite al watchdog distinguir "va de
+   * camino" de "se ha quedado colgado".
+   */
+  enteringSince?: number;
+  /**
    * Desalojo en curso: el personaje sigue en el mapa (y en su habitacion)
    * mientras dura la animacion de caida. Al terminar se borra del todo.
    * `startedAt` permite que la animacion arranque una sola vez.
