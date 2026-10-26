@@ -31,6 +31,7 @@ import { mockTikTokProvider, DEFAULT_GIFT_RULES, TikTokCommentEvent, TikTokGiftE
 import { hotelBroadcast } from '../services/broadcastSync';
 import { hotelSync, HotelSyncStatus } from '../services/hotelSync';
 import { browserReport } from '../services/browserReport';
+import { sanitizeRestoredState, POWER_HIT_MS, GIFT_CELEBRATION_MS } from '../services/sanitizeState';
 
 const triggerConfetti = (opts: any = {}) => {
   if (typeof window !== 'undefined') {
@@ -99,17 +100,8 @@ const HOTEL_STORAGE_KEY = 'tiktok_hotel_active_state_v2';
 const BUBBLE_MS = 2800;
 
 /**
- * Cuanto dura el aviso de impacto de un poder sobre el receptor (el temblor del
- * personaje y de su habitacion). Debe coincidir con `.animate-room-shock` y
- * `.animate-power-shock` en globals.css.
- */
-const POWER_HIT_MS = 1400;
 
 /**
- * Cuanto dura la celebracion de un regalo (aura en el personaje y destello en la
- * habitacion). Pasado ese tiempo queda solo el trofeo en la repisa.
- */
-const GIFT_CELEBRATION_MS = 4000;
 
 /**
  * Umbrales de expansion de la habitacion: +1 habitacion por cada 500 likes,
@@ -155,222 +147,6 @@ function superpowersParaLikes(
   return SUPERPOWERS.filter((p) => total >= p.likesRequired).map((p) => p.id);
 }
 
-/**
- * Sanea un estado restaurado de localStorage.
- *
- * El estado persistido es de una version ANTERIOR de la app en cuanto se anade
- * un campo, asi que puede traer residentes incompletos. Un solo residente con
- * `username` undefined tumbaba la pagina ENTERA con
- * "Cannot read properties of undefined (reading 'toLowerCase')" — el error que
- * veian movil y tablet, que tenian estado viejo guardado, mientras que en un
- * navegador limpio no aparecia nunca.
- *
- * Es el mismo fallo que ya se parcheo para `avatar` en CharacterRenderer: se
- * arregla el sintoma en el render en vez de la causa. Aqui se normaliza al
- * CARGAR, que es donde esta la causa: asi cualquier campo que se anada en el
- * futuro no puede reventar el arranque por venir ausente.
- */
-function sanitizeRestoredState(parsed: any): any {
-  const AVATAR_DEFECTO = {
-    skinColor: '#F5CBA7',
-    hairStyle: 'sleek',
-    hairColor: '#2C1810',
-    outfitStyle: 'casual',
-    outfitColor: '#3498DB',
-    accessory: 'none',
-    eyeType: 'normal',
-  };
-
-  const residentsEntrada = parsed?.residents && typeof parsed.residents === 'object'
-    ? parsed.residents
-    : {};
-
-  const residents: Record<string, any> = {};
-  for (const [id, raw] of Object.entries<any>(residentsEntrada)) {
-    if (!raw || typeof raw !== 'object') continue;
-
-    // username es la clave de identidad y lo primero que se lee con
-    // .toLowerCase(): sin el, el residente es inservible. Se reconstruye desde
-    // displayName y, si tampoco hay, se descarta.
-    let username = typeof raw.username === 'string' ? raw.username.trim() : '';
-    if (!username && typeof raw.displayName === 'string') {
-      username = raw.displayName.replace(/^@/, '').trim();
-    }
-    if (!username) continue;
-
-    const displayName =
-      typeof raw.displayName === 'string' && raw.displayName.trim()
-        ? raw.displayName
-        : `@${username}`;
-
-    residents[id] = {
-      ...raw,
-      id,
-      username,
-      displayName,
-      // Campos anadidos despues: sin estos, el contador y la animacion de
-      // desalojo leen undefined.
-      likes: Number.isFinite(Number(raw.likes)) ? Number(raw.likes) : 0,
-      evicting: raw.evicting ?? null,
-      superpowers: Array.isArray(raw.superpowers) ? raw.superpowers : [],
-      stayRemainingSec: Number.isFinite(Number(raw.stayRemainingSec))
-        ? Number(raw.stayRemainingSec)
-        : null,
-      stayTotalSec: Number.isFinite(Number(raw.stayTotalSec)) ? Number(raw.stayTotalSec) : 0,
-      expandedRoomIds: Array.isArray(raw.expandedRoomIds) ? raw.expandedRoomIds : [],
-      roomSpan: Number.isFinite(Number(raw.roomSpan)) && Number(raw.roomSpan) > 0
-        ? Number(raw.roomSpan)
-        : 1,
-      // El impacto de poder es un aviso momentaneo: no debe sobrevivir a una
-      // recarga (el temporizador que lo limpia vive en memoria).
-      powerHit:
-        raw.powerHit && typeof raw.powerHit === 'object' &&
-        Date.now() - (Number(raw.powerHit.at) || 0) < POWER_HIT_MS
-          ? raw.powerHit
-          : null,
-      // Los trofeos SI sobreviven: son el historial de donaciones del residente.
-      giftTrophies: Array.isArray(raw.giftTrophies)
-        ? raw.giftTrophies.filter(
-            (t: any) => t && typeof t === 'object' && typeof t.icon === 'string'
-          )
-        : [],
-      // La marca del watchdog no debe sobrevivir a una recarga: si venia de una
-      // sesion anterior, el residente se consideraria atascado al instante.
-      enteringSince: 0,
-      giftCount: Number.isFinite(Number(raw.giftCount)) ? Number(raw.giftCount) : 0,
-      // La celebracion si es momentanea.
-      giftAt:
-        Number.isFinite(Number(raw.giftAt)) &&
-        Date.now() - Number(raw.giftAt) < GIFT_CELEBRATION_MS
-          ? Number(raw.giftAt)
-          : null,
-      energy: Number.isFinite(Number(raw.energy)) ? Number(raw.energy) : 80,
-      stability: Number.isFinite(Number(raw.stability)) ? Number(raw.stability) : 100,
-      vipLevel: Number.isFinite(Number(raw.vipLevel)) ? Number(raw.vipLevel) : 0,
-      coordX: Number.isFinite(Number(raw.coordX)) ? Number(raw.coordX) : 50,
-      direction: raw.direction === 'left' ? 'left' : 'right',
-      currentAction: raw.currentAction || 'idle',
-      location: raw.location || 'room',
-      // Un residente sin avatar reventaba el render de su personaje.
-      avatar: { ...AVATAR_DEFECTO, ...(raw.avatar && typeof raw.avatar === 'object' ? raw.avatar : {}) },
-      // Una burbuja de dialogo NO debe sobrevivir a una recarga.
-      //
-      // Se persiste en localStorage, pero el setTimeout que la borra vive en
-      // memoria: al recargar, la burbuja se quedaba pegada al personaje PARA
-      // SIEMPRE (nadie la limpiaba). Es el sintoma de "las burbujas no se
-      // quitan". Aqui se descarta si ya paso su duracion, y si no, se conserva
-      // solo si le queda vida util.
-      speechBubble: (() => {
-        const b = raw.speechBubble;
-        if (!b || typeof b !== 'object' || typeof b.text !== 'string') return null;
-        const inicio = Number(b.timestamp) || 0;
-        const dur = Number(b.durationMs) || 3000;
-        if (!inicio || Date.now() - inicio >= dur) return null;
-        return b;
-      })(),
-    };
-  }
-
-  const entryQueue = Array.isArray(parsed?.entryQueue)
-    ? parsed.entryQueue.filter(
-        (q: any) =>
-          q && typeof q === 'object' && typeof q.username === 'string' && q.username.trim()
-      )
-    : [];
-
-  // Cualquier ocupante que apunte a un residente descartado deja la habitacion
-  // libre: si no, queda marcada OCUPADA para siempre sin nadie dentro.
-  const rooms: Record<string, any> = {};
-  for (const [id, raw] of Object.entries<any>(
-    parsed?.rooms && typeof parsed.rooms === 'object' ? parsed.rooms : {}
-  )) {
-    if (!raw || typeof raw !== 'object') continue;
-    const ocupanteValido =
-      raw.occupantId && Object.prototype.hasOwnProperty.call(residents, raw.occupantId);
-    // `absorbedBy` solo se conserva mientras el residente que absorbio siga en
-    // el mapa: es quien dibuja el bloque ancho que la tapa. Si el absorbente ya
-    // no esta, se limpia para que la habitacion vuelva a ser normal (si no,
-    // quedaria invisible para siempre).
-    const absorbenteValido =
-      raw.absorbedBy && Object.prototype.hasOwnProperty.call(residents, raw.absorbedBy);
-    rooms[id] = {
-      ...raw,
-      id,
-      occupantId: ocupanteValido ? raw.occupantId : null,
-      status: ocupanteValido ? raw.status || 'OCUPADA' : 'VACIA',
-      absorbedBy: absorbenteValido ? raw.absorbedBy : null,
-    };
-  }
-
-  // Recortar una cola heredada que se haya quedado desbordada.
-  //
-  // Antes de existir el tope, la fila crecia sin limite (se vieron 130+
-  // personas esperando con 60 espectadores). Un estado guardado asi seguiria
-  // mostrando la fila enorme aunque el codigo nuevo ya no la deje crecer: hay
-  // que podarla al cargar. Se conservan los primeros, que son los que Don Pepe
-  // va a atender antes.
-  const totalRoomsGuardadas = Object.keys(rooms).length || 4;
-  const libresGuardadas = Object.values(rooms).filter((r: any) => !r.occupantId).length;
-  const topeCola = Math.max(8, Math.min(totalRoomsGuardadas * 2, libresGuardadas + totalRoomsGuardadas));
-
-  // Las habitaciones de cada piso: `floor.rooms` lo recorre FloorRenderer con
-  // .map() sin proteccion. Un piso restaurado sin `rooms` (o con un valor que no
-  // sea array) tumbaba la app entera con "Cannot read properties of undefined
-  // (reading 'map')". Se normaliza y se descartan los pisos inservibles.
-  const floors = (Array.isArray(parsed?.floors) ? parsed.floors : [])
-    .filter((f: any) => f && typeof f === 'object')
-    .map((f: any) => ({
-      ...f,
-      rooms: Array.isArray(f.rooms)
-        ? f.rooms.filter((id: any) => typeof id === 'string' && rooms[id])
-        : [],
-      name: typeof f.name === 'string' && f.name ? f.name : `Piso ${f.floorNumber ?? 1}`,
-      floorNumber: Number.isFinite(Number(f.floorNumber)) ? Number(f.floorNumber) : 1,
-      status: f.status || 'active',
-      isDestroyable: !!f.isDestroyable,
-    }))
-    // Un piso sin habitaciones validas no se puede dibujar: se descarta.
-    .filter((f: any) => f.rooms.length > 0);
-
-  return {
-    ...parsed,
-    floors,
-    residents,
-    rooms,
-    entryQueue: entryQueue.slice(0, topeCola),
-    // `globalEvent` lo lee el render como `globalEvent.type` sin proteccion: si
-    // falta (estado viejo o manipulado), la app entera revienta con
-    // "Cannot read properties of undefined (reading 'type')". Se normaliza.
-    globalEvent:
-      parsed?.globalEvent && typeof parsed.globalEvent === 'object'
-        ? {
-            type: parsed.globalEvent.type || 'NONE',
-            title: parsed.globalEvent.title || '',
-            message: parsed.globalEvent.message || '',
-            durationMs: Number(parsed.globalEvent.durationMs) || 0,
-            startedAt: Number(parsed.globalEvent.startedAt) || 0,
-          }
-        : { type: 'NONE', title: '', message: '', durationMs: 0, startedAt: 0 },
-    // `camera` tambien se lee sin proteccion en el render.
-    camera:
-      parsed?.camera && typeof parsed.camera === 'object'
-        ? parsed.camera
-        : { targetType: 'GENERAL', targetFloor: 1, zoom: 1.0, priority: 5, lockUntil: 0 },
-    // `demolitionState` lo consume FloorRenderer con campos anidados.
-    demolitionState:
-      parsed?.demolitionState && typeof parsed.demolitionState === 'object'
-        ? parsed.demolitionState
-        : { isDemolishing: false, demolishingFloorNumber: null, phase: 'none', affectedUpperFloors: [] },
-    stats:
-      parsed?.stats && typeof parsed.stats === 'object'
-        ? parsed.stats
-        : { totalResidentsJoined: 0, totalGiftsReceived: 0, totalComments: 0, peakResidents: 0 },
-    notifications: Array.isArray(parsed?.notifications) ? parsed.notifications : [],
-    // Los poderes en vuelo son efimeros: nunca se restauran (una animacion a
-    // medias de la sesion anterior no tiene sentido).
-    powerCasts: [],
-  };
-}
 
 /**
  * Modo del provider.
@@ -1004,9 +780,10 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
     );
 
     triggerConfetti({
-      particleCount: 50,
-      spread: 60,
-      origin: { y: 0.4 },
+      particleCount: 80,
+      spread: 100,
+      origin: { y: 0.15 },
+      colors: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
     });
 
     addNotification({
@@ -1204,7 +981,8 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
 
     const queueLength = s.entryQueue.length;
     // Dynamic cinematic pace: faster if viewers are waiting in queue so nobody is kept waiting
-    const speed = queueLength > 4 ? 0.35 : queueLength > 1 ? 0.6 : 1.0;
+    // Velocidad aumentada +50% (antes: 0.35/0.6/1.0)
+    const speed = queueLength > 4 ? 0.23 : queueLength > 1 ? 0.4 : 0.67;
 
     lastProgressTimestampRef.current = Date.now();
     // Esperar en mostrador mientras Don Pepe entrega llaves

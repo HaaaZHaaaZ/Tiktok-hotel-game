@@ -51,6 +51,11 @@ function uname(u?: { nickname?: string; uniqueId?: string } | null): string {
   return s.startsWith('@') ? s : `@${s}`;
 }
 
+/** Id de evento: unifica las dos ocurrencias que aparecian en ingest() y emit(). */
+function newEventId(): string {
+  return `ev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
 class LiveBridge {
   private conn: TikTokLiveConnection | null = null;
   private streamer = '';
@@ -132,7 +137,7 @@ class LiveBridge {
   /** Ingesta manual (POST de webhook externo o pruebas). */
   ingest(ev: Omit<HotelEvent, 'id' | 'timestamp'>) {
     this.enqueue({
-      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: newEventId(),
       timestamp: Date.now(),
       ...ev,
     });
@@ -304,7 +309,7 @@ class LiveBridge {
         this.lastError = '';
       }
       this.enqueue({
-        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: newEventId(),
         timestamp: Date.now(),
         ...e,
       });

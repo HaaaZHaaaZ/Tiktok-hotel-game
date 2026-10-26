@@ -9,9 +9,10 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.10.11-1';
+export const APP_VERSION = '2026.10.26-1';
 
 export const APP_VERSION_NOTES = [
+  'refactor: saneador de estado a modulo puro testeable + id de evento centralizado; sin cambio de comportamiento',
   'fix: un solo hotel compartido, sin hoteles paralelos que se peleen',
   'fix: el tiempo de duracion ya no oscila entre 30 y 10 al configurarlo',
   'fix: las ordenes del panel se aplican de verdad (el codigo era inalcanzable)',
