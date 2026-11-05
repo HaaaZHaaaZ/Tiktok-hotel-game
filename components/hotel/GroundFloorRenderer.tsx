@@ -14,7 +14,7 @@ interface GroundFloorRendererProps {
   receptionAttending?: ReceptionAttendingState | null;
 }
 
-export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
+const GroundFloorRendererBase: React.FC<GroundFloorRendererProps> = ({
   timeOfDay,
   globalEvent,
   isElevatorOpen = false,
@@ -270,3 +270,6 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
     </div>
   );
 };
+
+/** Memoizado: solo se repinta si cambian sus props (el estado es inmutable). */
+export const GroundFloorRenderer = React.memo(GroundFloorRendererBase);

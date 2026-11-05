@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useHotel } from '../../context/HotelContext';
 import { HotelHud } from './HotelHud';
 import { FloorRenderer } from './FloorRenderer';
@@ -27,7 +27,9 @@ export const HotelView: React.FC = () => {
 
   // Residentes en plena caida por desalojo. Se dibujan en un overlay sobre todo
   // el edificio: dentro de la habitacion el recuadro los recortaria.
-  const evictingResidents = Object.values(residents).filter((r) => r.evicting);
+  const evictingResidents = useStableArray(
+    useMemo(() => Object.values(residents).filter((r) => r.evicting), [residents])
+  );
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const buildingRef = useRef<HTMLDivElement>(null);
@@ -44,7 +46,12 @@ export const HotelView: React.FC = () => {
   // Dynamic scale so the ENTIRE building fits 100% in GENERAL view without anyone cut off
   const [autoFitScale, setAutoFitScale] = useState(0.75);
 
-  const vipResidentsList = vipPenthouseResidents.map((id) => residents[id]).filter(Boolean);
+  const vipResidentsList = useStableArray(
+    useMemo(
+      () => vipPenthouseResidents.map((id) => residents[id]).filter(Boolean),
+      [vipPenthouseResidents, residents]
+    )
+  );
 
   // Dynamic Outdoor Sky / City Backdrop
   let skyGradient = 'from-sky-400 via-sky-300 to-amber-100'; // Day
@@ -316,12 +323,31 @@ export const HotelView: React.FC = () => {
   }, [measureFloors, floors.length]);
 
   // Lobby corridor residents (visiting reception)
-  const groundFloorResidents = Object.values(residents).filter(
-    (res) => res.location === 'reception' || (res.isEntering && res.location === 'elevator')
+  const groundFloorResidents = useStableArray(
+    useMemo(
+      () =>
+        Object.values(residents).filter(
+          (res) => res.location === 'reception' || (res.isEntering && res.location === 'elevator')
+        ),
+      [residents]
+    )
   );
 
   // Stack floors in descending order: Highest floor on top, down to Floor 1
-  const sortedFloors = [...floors].sort((a, b) => b.floorNumber - a.floorNumber);
+  const sortedFloors = useMemo(
+    () => [...floors].sort((a, b) => b.floorNumber - a.floorNumber),
+    [floors]
+  );
+
+  // Pisos con el ascensor en marcha, calculado UNA vez (antes se recorrian todos
+  // los residentes por cada piso en cada render).
+  const pisosConAscensor = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of Object.values(residents)) {
+      if (r.isEntering || r.currentAction === 'entering_hotel') set.add(r.floorNumber);
+    }
+    return set;
+  }, [residents]);
 
   return (
     <div
@@ -394,11 +420,7 @@ export const HotelView: React.FC = () => {
           {/* 2. Vertically Stacked Hotel Floors (Highest floor on top, down to Floor 1) */}
           <div className="w-full flex flex-col divide-y-2 divide-slate-700">
             {sortedFloors.map((floor) => {
-              const isElevatorOperating = Object.values(residents).some(
-                (r) =>
-                  r.floorNumber === floor.floorNumber &&
-                  (r.isEntering || r.currentAction === 'entering_hotel')
-              );
+              const isElevatorOperating = pisosConAscensor.has(floor.floorNumber);
               return (
                 <div
                   key={floor.id}
@@ -477,3 +499,21 @@ export const HotelView: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * Devuelve el array anterior si tiene los mismos elementos (por referencia).
+ *
+ * Los filtros sobre `residents` crean un array nuevo en cada render; sin esto,
+ * los hijos memoizados que los reciben (planta baja, penthouse, overlays) se
+ * repintarian siempre aunque su lista no hubiera cambiado.
+ */
+function useStableArray<T>(next: T[]): T[] {
+  // Patron "guardar informacion de renders anteriores" de la doc de React:
+  // setState durante el render del MISMO componente, sin refs.
+  const [stable, setStable] = useState(next);
+  if (stable !== next && (stable.length !== next.length || stable.some((x, i) => x !== next[i]))) {
+    setStable(next);
+    return next;
+  }
+  return stable;
+}

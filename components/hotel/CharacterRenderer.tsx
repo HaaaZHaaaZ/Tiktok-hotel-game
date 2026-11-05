@@ -15,7 +15,7 @@ const POWER_HIT_MS = 1400;
 /** Duracion de la celebracion de un regalo (aura + salto). */
 const GIFT_CELEBRATION_MS = 4000;
 
-export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
+const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
   resident,
   scale = 1,
   showName = true,
@@ -496,3 +496,6 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
     </div>
   );
 };
+
+/** Memoizado: solo se repinta si cambian sus props (el estado es inmutable). */
+export const CharacterRenderer = React.memo(CharacterRendererBase);

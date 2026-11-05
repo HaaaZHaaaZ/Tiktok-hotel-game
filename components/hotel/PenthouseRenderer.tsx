@@ -10,7 +10,7 @@ interface PenthouseRendererProps {
   isFocused?: boolean;
 }
 
-export const PenthouseRenderer: React.FC<PenthouseRendererProps> = ({
+const PenthouseRendererBase: React.FC<PenthouseRendererProps> = ({
   vipResidents,
   timeOfDay,
   isFocused = false,
@@ -117,3 +117,6 @@ export const PenthouseRenderer: React.FC<PenthouseRendererProps> = ({
     </div>
   );
 };
+
+/** Memoizado: solo se repinta si cambian sus props (el estado es inmutable). */
+export const PenthouseRenderer = React.memo(PenthouseRendererBase);

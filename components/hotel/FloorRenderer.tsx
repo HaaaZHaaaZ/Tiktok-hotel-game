@@ -5,6 +5,7 @@ import { Floor, Room, Resident, TimeOfDay, GlobalEventType, DemolitionState } fr
 import { RoomRenderer } from './RoomRenderer';
 import { ElevatorRenderer } from './ElevatorRenderer';
 import { CharacterRenderer } from './CharacterRenderer';
+import { floorPropsEqual, type FloorPropsLike } from '../../services/floorEquality';
 
 interface FloorRendererProps {
   floor: Floor;
@@ -17,7 +18,7 @@ interface FloorRendererProps {
   demolitionState?: DemolitionState;
 }
 
-export const FloorRenderer: React.FC<FloorRendererProps> = ({
+const FloorRendererBase: React.FC<FloorRendererProps> = ({
   floor,
   rooms,
   residents,
@@ -232,3 +233,12 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
     </div>
   );
 };
+
+/**
+ * Memoizado con un comparador propio: el piso recibe `rooms` y `residents` del
+ * hotel entero, pero solo se repinta si cambia algo de SU piso (ver
+ * `services/floorEquality.ts`).
+ */
+export const FloorRenderer = React.memo(FloorRendererBase, (a, b) =>
+  floorPropsEqual(a as unknown as FloorPropsLike, b as unknown as FloorPropsLike)
+);

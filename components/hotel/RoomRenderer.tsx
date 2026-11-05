@@ -21,7 +21,7 @@ interface RoomRendererProps {
   span?: number;
 }
 
-export const RoomRenderer: React.FC<RoomRendererProps> = ({
+const RoomRendererBase: React.FC<RoomRendererProps> = ({
   room,
   resident,
   timeOfDay,
@@ -402,3 +402,6 @@ export const RoomRenderer: React.FC<RoomRendererProps> = ({
     </div>
   );
 };
+
+/** Memoizado: solo se repinta si cambian sus props (el estado es inmutable). */
+export const RoomRenderer = React.memo(RoomRendererBase);

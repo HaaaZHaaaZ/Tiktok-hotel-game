@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   HotelState,
   Resident,
@@ -32,6 +32,7 @@ import { hotelBroadcast } from '../services/broadcastSync';
 import { hotelSync, HotelSyncStatus } from '../services/hotelSync';
 import { browserReport } from '../services/browserReport';
 import { sanitizeRestoredState, POWER_HIT_MS, GIFT_CELEBRATION_MS } from '../services/sanitizeState';
+import { shareUnchanged } from '../services/structuralShare';
 
 const triggerConfetti = (opts: any = {}) => {
   if (typeof window !== 'undefined') {
@@ -342,13 +343,19 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
       // reconstruye TODOS los objetos con spreads nuevos. Al llegar un evento del
       // live, React recibia un arbol con referencias nuevas y remontaba el
       // edificio entero: es el parpadeo continuo que se veia con el live.
-      setState((prev) => ({
-        ...remoto,
-        // La camara y la animacion de recepcion son LOCALES: cada pantalla mira
-        // donde quiere y no deben saltar cuando otro dispositivo cambia algo.
-        camera: prev.camera,
-        receptionAttending: prev.receptionAttending,
-      }));
+      //
+      // `shareUnchanged` reutiliza los objetos que no cambiaron: el JSON del
+      // servidor trae TODO nuevo, y sin esto cada sondeo repintaba el edificio
+      // entero aunque solo hubiera cambiado un residente.
+      setState((prev) =>
+        shareUnchanged(prev, {
+          ...remoto,
+          // La camara y la animacion de recepcion son LOCALES: cada pantalla mira
+          // donde quiere y no deben saltar cuando otro dispositivo cambia algo.
+          camera: prev.camera,
+          receptionAttending: prev.receptionAttending,
+        })
+      );
     });
 
     // Ordenes del panel de administracion. El servidor solo las entrega a la
@@ -468,15 +475,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
   const isProcessingEntryRef = useRef(false);
 
   // Audio toggles
-  const setIsAudioMuted = (muted: boolean) => {
+  const setIsAudioMuted = useCallback((muted: boolean) => {
     setIsAudioMutedState(muted);
     audioEngine.setMuted(muted);
-  };
+  }, []);
 
-  const setIsSpeechMuted = (muted: boolean) => {
+  const setIsSpeechMuted = useCallback((muted: boolean) => {
     setIsSpeechMutedState(muted);
     audioEngine.setSpeechMuted(muted);
-  };
+  }, []);
 
   // Helper to add notification
   const addNotification = useCallback((notif: Omit<LiveNotification, 'id' | 'timestamp'>) => {
@@ -2955,44 +2962,87 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
   // (antes de que exista `aplicarOrden`).
   aplicarOrdenRef.current = aplicarOrden;
 
+  // Valor del contexto memoizado: antes era un objeto nuevo en CADA render del
+  // proveedor, asi que todos los consumidores se repintaban aunque no hubiera
+  // cambiado nada de lo que usan.
+  const contextValue = useMemo(
+    () => ({
+      state,
+      joinViewer,
+      sendComment,
+      sendGift,
+      triggerEvent,
+      setTimeOfDay,
+      setWeather,
+      advanceTime,
+      createNextFloor,
+      destroyUpperFloor,
+      evictResident,
+      finalizeEviction,
+      upgradeResidentRoom,
+      promoteToVip,
+      boostStability,
+      resetLiveSession,
+      toggleAutoSimulation,
+      isAutoSimulating,
+      activeFloorNumber,
+      setActiveFloorNumber,
+      showSafeZoneGuides,
+      setShowSafeZoneGuides,
+      isAudioMuted,
+      setIsAudioMuted,
+      isSpeechMuted,
+      setIsSpeechMuted,
+      setCameraFocus,
+      resetCamera,
+      updateEntryRules,
+      simulateUserShare,
+      simulateUserLikes,
+      simulateUserFollow,
+      finalizePowerCast,
+      syncStatus,
+    }),
+    [
+      state,
+      joinViewer,
+      sendComment,
+      sendGift,
+      triggerEvent,
+      setTimeOfDay,
+      setWeather,
+      advanceTime,
+      createNextFloor,
+      destroyUpperFloor,
+      evictResident,
+      finalizeEviction,
+      upgradeResidentRoom,
+      promoteToVip,
+      boostStability,
+      resetLiveSession,
+      toggleAutoSimulation,
+      isAutoSimulating,
+      activeFloorNumber,
+      setActiveFloorNumber,
+      showSafeZoneGuides,
+      setShowSafeZoneGuides,
+      isAudioMuted,
+      setIsAudioMuted,
+      isSpeechMuted,
+      setIsSpeechMuted,
+      setCameraFocus,
+      resetCamera,
+      updateEntryRules,
+      simulateUserShare,
+      simulateUserLikes,
+      simulateUserFollow,
+      finalizePowerCast,
+      syncStatus,
+    ]
+  );
+
   return (
     <HotelContext.Provider
-      value={{
-        state,
-        joinViewer,
-        sendComment,
-        sendGift,
-        triggerEvent,
-        setTimeOfDay,
-        setWeather,
-        advanceTime,
-        createNextFloor,
-        destroyUpperFloor,
-        evictResident,
-        finalizeEviction,
-        upgradeResidentRoom,
-        promoteToVip,
-        boostStability,
-        resetLiveSession,
-        toggleAutoSimulation,
-        isAutoSimulating,
-        activeFloorNumber,
-        setActiveFloorNumber,
-        showSafeZoneGuides,
-        setShowSafeZoneGuides,
-        isAudioMuted,
-        setIsAudioMuted,
-        isSpeechMuted,
-        setIsSpeechMuted,
-        setCameraFocus,
-        resetCamera,
-        updateEntryRules,
-        simulateUserShare,
-        simulateUserLikes,
-        simulateUserFollow,
-        finalizePowerCast,
-        syncStatus,
-      }}
+      value={contextValue}
     >
       {children}
     </HotelContext.Provider>
