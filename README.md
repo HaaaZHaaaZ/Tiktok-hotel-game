@@ -1,7 +1,7 @@
 # 🏨 TikTok Hotel — Juego Interactivo para TikTok LIVE
 
 [![Licencia: PolyForm Noncommercial](https://img.shields.io/badge/Licencia-PolyForm%20Noncommercial-orange.svg)](LICENSE)
-[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.10.09--11-green.svg)](CHANGELOG.md)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.11.05--1-green.svg)](CHANGELOG.md)
 
 Hotel virtual 2D en tiempo real que se construye con la audiencia de un directo de
 TikTok. Los espectadores entran comentando, reciben una habitación, suben de piso,
@@ -201,6 +201,11 @@ USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
 ```
+
+**Contraseña del panel:** define `ADMIN_PASSWORD` en el contenedor
+(`docker run -e ADMIN_PASSWORD=...`). En producción, si falta, el panel `/admin`
+queda **bloqueado** (responde 503) en vez de abrirse con la clave por defecto,
+que es pública. La clave por defecto solo vale en `npm run dev`.
 
 > El `COPY` de `.next/static` es **imprescindible**: sin él el HTML se sirve pero
 > los assets dan 404 y la página sale en blanco.

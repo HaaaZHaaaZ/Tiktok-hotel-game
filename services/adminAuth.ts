@@ -1,4 +1,5 @@
-import { NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 
 /**
  * Comprobacion de la sesion de administrador.
@@ -11,44 +12,72 @@ import { NextRequest } from 'next/server';
 
 export const ADMIN_COOKIE = 'hotel_admin';
 
-/** Contrasena por defecto, para que el proyecto funcione sin configurar nada. */
+/**
+ * Contrasena por defecto, SOLO para desarrollo (`next dev`).
+ *
+ * En produccion (`NODE_ENV=production`, que es lo que pone el Dockerfile) NO se
+ * usa nunca: el repo es publico y cualquiera la conoce. Si falta
+ * `ADMIN_PASSWORD`, el panel queda bloqueado en vez de abierto con una clave
+ * conocida.
+ */
 export const PASSWORD_POR_DEFECTO = 'hermes';
 
 /** Cuanto dura la sesion. */
 export const SESION_MS = 12 * 60 * 60 * 1000; // 12 horas
 
-export function passwordValida(): { pass: string; porDefecto: boolean } {
-  const env = (process.env.ADMIN_PASSWORD || '').trim();
-  if (env) return { pass: env, porDefecto: false };
-  return { pass: PASSWORD_POR_DEFECTO, porDefecto: true };
+export interface EstadoPassword {
+  /** Contrasena vigente, o null si el panel esta bloqueado. */
+  pass: string | null;
+  /** Se esta usando la contrasena de desarrollo. */
+  porDefecto: boolean;
+  /** Produccion sin ADMIN_PASSWORD: nadie puede entrar. */
+  bloqueado: boolean;
+}
+
+export function passwordValida(env: NodeJS.ProcessEnv = process.env): EstadoPassword {
+  const propia = (env.ADMIN_PASSWORD || '').trim();
+  if (propia) return { pass: propia, porDefecto: false, bloqueado: false };
+  if (env.NODE_ENV === 'production') return { pass: null, porDefecto: false, bloqueado: true };
+  return { pass: PASSWORD_POR_DEFECTO, porDefecto: true, bloqueado: false };
+}
+
+/** Compara en tiempo constante (no filtra por cuanto tarda cuantos caracteres acierta). */
+function igualesSeguro(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a).digest();
+  const hb = createHash('sha256').update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
+/** La contrasena enviada es la buena? Siempre false si el panel esta bloqueado. */
+export function passwordCorrecta(enviada: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const { pass } = passwordValida(env);
+  if (!pass) return false;
+  return igualesSeguro(enviada, pass);
 }
 
 /**
- * Firma el token de sesion.
- *
- * No es un JWT: no hace falta. Es un valor derivado de la contrasena y la fecha,
- * que el servidor puede volver a calcular para comprobar que la cookie es suya.
- * Sin la contrasena no se puede fabricar.
+ * Firma el token de sesion: HMAC-SHA256 de la marca de tiempo con la contrasena
+ * como clave. Sin la contrasena no se puede fabricar, y al cambiar
+ * `ADMIN_PASSWORD` todas las sesiones anteriores dejan de valer.
  */
 export function firmarSesion(marca: number, pass: string): string {
-  let h = 2166136261;
-  const texto = `${marca}:${pass}:hotel`;
-  for (let i = 0; i < texto.length; i++) {
-    h ^= texto.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36);
+  return createHmac('sha256', pass).update(`${marca}:hotel`).digest('base64url');
 }
 
 /** El token es valido y no ha caducado? */
-export function tokenValido(token: string | undefined): boolean {
+export function tokenValido(
+  token: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  ahora: number = Date.now()
+): boolean {
   if (!token) return false;
+  const { pass } = passwordValida(env);
+  if (!pass) return false;
   const [marcaStr, firma] = token.split('.');
   const marca = Number(marcaStr);
   if (!marca || !firma) return false;
-  if (Date.now() - marca > SESION_MS) return false;
-  const { pass } = passwordValida();
-  return firmarSesion(marca, pass) === firma;
+  if (ahora - marca > SESION_MS || marca > ahora + 60_000) return false;
+  return igualesSeguro(firmarSesion(marca, pass), firma);
 }
 
 /** Hay sesion de administrador en esta peticion? */

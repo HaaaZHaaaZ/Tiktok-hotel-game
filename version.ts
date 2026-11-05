@@ -9,9 +9,11 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.10.26-1';
+export const APP_VERSION = '2026.11.05-1';
 
 export const APP_VERSION_NOTES = [
+  'seguridad: en produccion sin ADMIN_PASSWORD el panel queda bloqueado (antes entraba con la clave publica)',
+  'seguridad: sesion firmada con HMAC-SHA256 y comparacion en tiempo constante',
   'refactor: saneador de estado a modulo puro testeable + id de evento centralizado; sin cambio de comportamiento',
   'fix: un solo hotel compartido, sin hoteles paralelos que se peleen',
   'fix: el tiempo de duracion ya no oscila entre 30 y 10 al configurarlo',

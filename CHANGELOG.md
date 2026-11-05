@@ -12,6 +12,25 @@ comprobar de un vistazo que lo desplegado es lo que se está probando.
 
 ---
 
+## 2026.11.05-1 — El panel ya no se abre con la clave pública
+
+**El problema:** sin `ADMIN_PASSWORD`, el panel `/admin` aceptaba la contraseña
+por defecto, que está en el código de un repositorio público. Cualquiera podía
+entrar, cambiar reglas o reiniciar el live.
+
+- **Producción sin `ADMIN_PASSWORD` → panel bloqueado.** El login responde 503
+  y ninguna cookie vale. La clave por defecto solo funciona en `npm run dev`.
+- **Sesión firmada con HMAC-SHA256** (antes un hash FNV de 32 bits) y
+  comparación en tiempo constante. Se rechazan también tokens con fecha futura.
+- **Tests:** `services/adminAuth.test.mjs` (`node --test services/*.test.mjs`).
+- **Versión unificada:** `package.json` pasa de `1.0.0` a `2026.11.5-1` (mismo
+  número en semver, que no admite ceros a la izquierda); insignia del README y
+  `version.ts` en `2026.11.05-1`.
+- Entre 2026.10.11-1 y esta versión hubo un refactor sin cambio de
+  comportamiento (`a599bfa`, saneador de estado a módulo puro).
+
+---
+
 ## 2026.10.11-1 — Un solo hotel, y las órdenes del panel por fin se aplican
 
 **El problema:** al poner el tiempo de duración en 10, el campo oscilaba solo

@@ -26,6 +26,7 @@ export const AdminLogin: React.FC<{ onAcceso: () => void }> = ({ onAcceso }) => 
       .then((d) => {
         if (d?.autenticado) onAcceso();
         if (d?.usandoPasswordPorDefecto) setUsandoPorDefecto(true);
+        if (d?.bloqueado) setError('Panel bloqueado: falta ADMIN_PASSWORD en el servidor');
       })
       .catch(() => {
         // Sin respuesta del servidor: se queda en la pantalla de acceso.

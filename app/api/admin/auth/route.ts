@@ -3,6 +3,7 @@ import {
   ADMIN_COOKIE,
   SESION_MS,
   passwordValida,
+  passwordCorrecta,
   firmarSesion,
   tokenValido,
 } from '../../../../services/adminAuth';
@@ -17,9 +18,10 @@ import {
  * La sesion vive en una cookie `httpOnly`, asi que el navegador la manda sola en
  * cada peticion y el JavaScript de la pagina no puede leerla ni robarla.
  *
- * La contrasena se configura con `ADMIN_PASSWORD`. Si no se define, se usa una
- * por defecto y se avisa en la respuesta: el proyecto es abierto, asi que el
- * aviso importa mas que fingir que esta protegido.
+ * La contrasena se configura con `ADMIN_PASSWORD`. Si no se define:
+ * - en desarrollo se usa una por defecto y se avisa en la respuesta;
+ * - en produccion el panel queda BLOQUEADO (503): el repo es publico y la clave
+ *   por defecto la conoce cualquiera.
  */
 
 export const runtime = 'nodejs';
@@ -27,10 +29,11 @@ export const dynamic = 'force-dynamic';
 
 /** GET -> hay sesion activa? */
 export async function GET(req: NextRequest) {
-  const { porDefecto } = passwordValida();
+  const { porDefecto, bloqueado } = passwordValida();
   return NextResponse.json({
     autenticado: tokenValido(req.cookies.get(ADMIN_COOKIE)?.value),
     usandoPasswordPorDefecto: porDefecto,
+    bloqueado,
   });
 }
 
@@ -45,8 +48,18 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
-  const { pass, porDefecto } = passwordValida();
-  if (String(body?.password || '') !== pass) {
+  const { pass, porDefecto, bloqueado } = passwordValida();
+  if (bloqueado || !pass) {
+    return NextResponse.json(
+      {
+        ok: false,
+        bloqueado: true,
+        error: 'Panel bloqueado: falta ADMIN_PASSWORD en el servidor',
+      },
+      { status: 503 }
+    );
+  }
+  if (!passwordCorrecta(String(body?.password || ''))) {
     return NextResponse.json(
       { ok: false, error: 'Contraseña incorrecta' },
       { status: 401 }

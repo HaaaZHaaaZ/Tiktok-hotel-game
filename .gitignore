@@ -11,3 +11,6 @@ node_modules/
 *.log
 long_test.mjs
 cache/
+
+# salida de los tests (tsc transpila aqui)
+.tmp-test*/
