@@ -229,9 +229,10 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
 
       {/* Globo de dialogo (personajes sueltos en pasillo/planta baja).
           Estaba en -top-14, que lo sacaba del contenedor del personaje y lo
-          recortaba. Ahora se dibuja en el centro del personaje. */}
+          recortaba. Ahora se dibuja en -top-10 para que quede completamente
+          por encima del personaje sin ser recortado por los bordes del edificio. */}
       {speechBubble && (
-        <div className="absolute inset-x-0 top-1/2 z-50 flex justify-center pointer-events-none px-1 -translate-y-full">
+        <div className="absolute inset-x-0 -top-10 z-50 flex justify-center pointer-events-none px-1">
           <div className="relative bg-white text-slate-950 px-1.5 py-1 rounded-md border-2 border-slate-900 shadow-xl text-[9px] font-black max-w-[120px] text-center leading-tight break-words whitespace-normal animate-in zoom-in-95 duration-200">
             <span className="text-amber-500 mr-0.5">💬</span>
             {speechBubble.text}

@@ -173,8 +173,8 @@ export const GroundFloorRenderer: React.FC<GroundFloorRendererProps> = ({
           )}
 
           <div className="flex items-end gap-1">
-            {/* Don Pepe the Clerk */}
-            <div className="relative scale-85 origin-bottom">
+            {/* Don Pepe the Clerk. Cuando hay prisa (fila > 5) se mueve de lado a lado. */}
+            <div className={`relative scale-85 origin-bottom ${isDonPepeStressed ? 'animate-donpepe-rush' : ''}`}>
               <CharacterRenderer resident={receptionistNPC} showName={true} />
               {/* Gotas de sudor animadas cuando hay más de 5 en fila */}
               {isDonPepeStressed && (

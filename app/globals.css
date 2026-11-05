@@ -31,7 +31,7 @@
 .animate-marquee {
   display: flex;
   width: max-content;
-  animation: marquee 35s linear infinite;
+  animation: marquee 70s linear infinite;
 }
 
 @keyframes flicker-light {
@@ -50,24 +50,34 @@
   animation: flicker-light 0.8s infinite;
 }
 
-@keyframes brick-burst-1 {
+@keyframes coal-fall-1 {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-  100% { transform: translate(-90px, -70px) rotate(-180deg); opacity: 0; }
+  100% { transform: translate(-25px, 130px) rotate(160deg); opacity: 0; }
 }
 
-@keyframes brick-burst-2 {
+@keyframes coal-fall-2 {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-  100% { transform: translate(90px, -80px) rotate(180deg); opacity: 0; }
+  100% { transform: translate(15px, 150px) rotate(-180deg); opacity: 0; }
 }
 
-@keyframes brick-burst-3 {
+@keyframes coal-fall-3 {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-  100% { transform: translate(-60px, 60px) rotate(-90deg); opacity: 0; }
+  100% { transform: translate(-10px, 140px) rotate(-90deg); opacity: 0; }
 }
 
-@keyframes brick-burst-4 {
+@keyframes coal-fall-4 {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-  100% { transform: translate(70px, 70px) rotate(120deg); opacity: 0; }
+  100% { transform: translate(35px, 160px) rotate(120deg); opacity: 0; }
+}
+
+@keyframes donpepe-rush {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px) rotate(-2deg); }
+  75% { transform: translateX(6px) rotate(2deg); }
+}
+
+.animate-donpepe-rush {
+  animation: donpepe-rush 0.35s ease-in-out infinite;
 }
 
 @keyframes floor-drop {
@@ -84,20 +94,20 @@
   75% { transform: rotate(-15deg) translateY(4px); }
 }
 
-.animate-brick-1 {
-  animation: brick-burst-1 0.9s ease-out forwards;
+.animate-coal-1 {
+  animation: coal-fall-1 0.9s ease-out forwards;
 }
 
-.animate-brick-2 {
-  animation: brick-burst-2 0.9s ease-out forwards;
+.animate-coal-2 {
+  animation: coal-fall-2 0.9s ease-out forwards;
 }
 
-.animate-brick-3 {
-  animation: brick-burst-3 0.9s ease-out forwards;
+.animate-coal-3 {
+  animation: coal-fall-3 0.9s ease-out forwards;
 }
 
-.animate-brick-4 {
-  animation: brick-burst-4 0.9s ease-out forwards;
+.animate-coal-4 {
+  animation: coal-fall-4 0.9s ease-out forwards;
 }
 
 .animate-floor-drop {

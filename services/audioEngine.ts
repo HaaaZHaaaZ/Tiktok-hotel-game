@@ -425,6 +425,29 @@ class AudioEngine {
   }
 
   // --- Web Speech API TTS Announcements in Spanish ---
+  /**
+   * Reset the AudioContext and cancel all speech synthesis.
+   * Use this to fix stuck/broken audio without reloading the page.
+   */
+  public resetAudio() {
+    // Cancel any pending speech
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    // Stop party music interval
+    this.stopPartyMusic();
+
+    // Close and discard the old AudioContext so the next sound creates a fresh one
+    if (this.ctx) {
+      this.ctx.close().catch(() => {});
+      this.ctx = null;
+    }
+
+    // Re-initialise so the AudioContext goes through the user-gesture resume path
+    this.initCtx();
+  }
+
   public speakAnnouncement(text: string, priority = false) {
     if (this.speechMuted || typeof window === 'undefined' || !('speechSynthesis' in window)) {
       return;

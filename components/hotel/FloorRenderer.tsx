@@ -122,26 +122,26 @@ export const FloorRenderer: React.FC<FloorRendererProps> = ({
         </div>
       )}
 
-      {/* 2. Spectacular Explosion into Bricks & Pixel Debris */}
+      {/* 2. Spectacular Explosion into Falling Coal & Rock Debris */}
       {isExplodingBricks && (
         <div className="absolute inset-0 z-50 pointer-events-none overflow-visible flex items-center justify-center">
           {/* Central fireball flash */}
           <div className="w-48 h-48 rounded-full bg-gradient-to-r from-yellow-300 via-orange-500 to-red-600 blur-md animate-ping" />
           <div className="text-4xl animate-bounce absolute">💥</div>
 
-          {/* Flying Brick & Pixel Particles Scattering Outwards */}
-          <div className="absolute text-2xl animate-brick-1">🧱</div>
-          <div className="absolute text-2xl animate-brick-2">🧱</div>
-          <div className="absolute text-xl animate-brick-3">🪨</div>
-          <div className="absolute text-2xl animate-brick-4">🧱</div>
+          {/* Falling Coal & Rock Particles Dropping Downward */}
+          <div className="absolute top-0 text-2xl animate-coal-1">🪨</div>
+          <div className="absolute top-0 text-2xl animate-coal-2">⚫</div>
+          <div className="absolute top-0 text-xl animate-coal-3">💩</div>
+          <div className="absolute top-0 text-2xl animate-coal-4">🌑</div>
 
-          <div className="absolute text-lg animate-brick-1">🟧</div>
-          <div className="absolute text-lg animate-brick-2">🟫</div>
-          <div className="absolute text-xl animate-brick-3">💨</div>
-          <div className="absolute text-lg animate-brick-4">🟧</div>
+          <div className="absolute top-0 text-lg animate-coal-1">🪨</div>
+          <div className="absolute top-0 text-lg animate-coal-2">⚫</div>
+          <div className="absolute top-0 text-xl animate-coal-3">💩</div>
+          <div className="absolute top-0 text-lg animate-coal-4">🌑</div>
 
-          <div className="absolute -top-4 text-2xl animate-brick-2">🔥</div>
-          <div className="absolute -bottom-4 text-2xl animate-brick-3">💨</div>
+          <div className="absolute top-0 text-2xl animate-coal-2">💥</div>
+          <div className="absolute top-0 text-2xl animate-coal-3">🪨</div>
         </div>
       )}
 
