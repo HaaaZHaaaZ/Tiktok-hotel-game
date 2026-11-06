@@ -12,6 +12,31 @@ comprobar de un vistazo que lo desplegado es lo que se está probando.
 
 ---
 
+## 2026.11.06-1 — Más fluido: el hotel ya no se repinta entero con cada like
+
+**El problema:** cada like, comentario o sondeo del servidor volvía a pintar
+TODOS los pisos, habitaciones y personajes, aunque solo hubiera cambiado uno.
+
+- **Rendimiento.** Pisos, habitaciones, personajes, planta baja y penthouse
+  memoizados; el piso solo se repinta si cambia algo suyo
+  (`services/floorEquality.ts`). El estado que llega del servidor reutiliza los
+  objetos que no cambiaron (`services/structuralShare.ts`). Medido con 8 pisos
+  y 30 residentes: un like pasa de repintar 8 pisos (~41 ms) a 1 (~4.5 ms); un
+  sondeo sin cambios, de 8 pisos (~40 ms) a ninguno (~0.3 ms).
+- **Fix — el personaje cambiaba de tamaño.** La escala y las animaciones
+  (andar, bailar, temblar) compartían `transform` y la animación pisaba la
+  escala. Ahora van en capas distintas.
+- **Fix — texto en espejo.** Al mirar a la izquierda se volteaba el personaje
+  entero, nombre y globo incluidos. Ahora solo se voltea el cuerpo, con un giro
+  de 200 ms.
+- **Animación — paseo.** El personaje cruza la habitación con `translateX`
+  (GPU) en 1.6 s en vez de animar `left` (layout) en 0.7 s, y al llegar a su
+  habitación aparece con un pequeño salto.
+- Los efectos temporales (regalo, impacto de poder) terminan a su hora aunque
+  no haya otros eventos (`useRerenderAt`).
+
+---
+
 ## 2026.11.05-1 — El panel ya no se abre con la clave pública
 
 **El problema:** sin `ADMIN_PASSWORD`, el panel `/admin` aceptaba la contraseña

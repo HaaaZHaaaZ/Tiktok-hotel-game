@@ -9,9 +9,13 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.11.05-1';
+export const APP_VERSION = '2026.11.06-1';
 
 export const APP_VERSION_NOTES = [
+  'rendimiento: un like repinta 1 piso en vez del hotel entero (~9x menos trabajo por evento)',
+  'fix: el personaje ya no cambia de tamano al andar, bailar o temblar',
+  'fix: nombre, insignias y globo ya no salen en espejo al mirar a la izquierda',
+  'animacion: paseo por la habitacion fluido (GPU) y llegada con salto',
   'seguridad: en produccion sin ADMIN_PASSWORD el panel queda bloqueado (antes entraba con la clave publica)',
   'seguridad: sesion firmada con HMAC-SHA256 y comparacion en tiempo constante',
   'refactor: saneador de estado a modulo puro testeable + id de evento centralizado; sin cambio de comportamiento',

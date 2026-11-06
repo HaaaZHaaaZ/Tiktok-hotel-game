@@ -3,6 +3,7 @@
 import React from 'react';
 import { Room, Resident, TimeOfDay, GlobalEventType, SUPERPOWERS } from '../../types/hotel';
 import { CharacterRenderer } from './CharacterRenderer';
+import { useRerenderAt } from './useRerenderAt';
 
 /** Debe coincidir con la duracion de `.animate-room-shock` en globals.css. */
 const POWER_HIT_MS = 1400;
@@ -30,6 +31,11 @@ const RoomRendererBase: React.FC<RoomRendererProps> = ({
   isFalling = false,
   span = 1,
 }) => {
+  // Repintar justo cuando acaban el impacto de poder y la celebracion del regalo.
+  useRerenderAt(
+    resident?.powerHit ? (resident.powerHit.at || 0) + POWER_HIT_MS : null,
+    resident?.giftAt ? resident.giftAt + GIFT_CELEBRATION_MS : null
+  );
   const isOccupied = room.status === 'OCUPADA' || room.status === 'RESERVADA';
   const isVip = room.level === 'VIP';
   // Suite expandida: la habitacion principal ocupa varias columnas y se dibuja
@@ -368,16 +374,31 @@ const RoomRendererBase: React.FC<RoomRendererProps> = ({
             )}
 
             {!isSleeping && !resident.evicting && (
+              // Paseo por la habitacion con `transform` en vez de `left`.
+              //
+              // Antes se animaba `left` con `transition-all`: es una propiedad de
+              // LAYOUT, asi que en cada frame del paseo el navegador recalculaba
+              // la habitacion, y con 30 residentes moviendose a la vez se notaban
+              // tirones. `translateX` lo mueve la GPU sin tocar el layout.
+              //
+              // La capa ocupa el ancho de la habitacion, asi que `translateX(x%)`
+              // es x% del ancho de la habitacion; el hijo se centra con -50%.
+              // 1.6 s ease-in-out: se ve andar, no teletransportarse.
               <div
-                className="absolute bottom-0.5 z-30 overflow-visible flex flex-col items-center select-none transition-all duration-700 ease-out"
+                className="absolute bottom-0.5 left-0 w-full z-30 pointer-events-none transition-transform duration-[1600ms] ease-in-out"
                 style={{
-                  left: `${Math.max(22, Math.min(72, targetXPercent))}%`,
-                  transform: 'translateX(-50%)',
+                  transform: `translateX(${Math.max(22, Math.min(72, targetXPercent))}%)`,
                 }}
               >
-                {/* Character Chibi Renderer with integrated z-50 superior layer animations */}
-                <div style={{ transform: `scaleX(${resident.direction === 'left' ? -1 : 1})` }}>
-                  <CharacterRenderer resident={resident} scale={0.84} showName={true} />
+                <div className="inline-flex flex-col items-center select-none overflow-visible -translate-x-1/2 pointer-events-auto">
+                  <div className="animate-char-arrive">
+                    <CharacterRenderer
+                      resident={resident}
+                      scale={0.84}
+                      showName={true}
+                      flip={resident.direction === 'left'}
+                    />
+                  </div>
                 </div>
               </div>
             )}

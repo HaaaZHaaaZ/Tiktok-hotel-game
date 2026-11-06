@@ -2,11 +2,14 @@
 
 import React from 'react';
 import { Resident, ResidentAvatar, SUPERPOWERS } from '../../types/hotel';
+import { useRerenderAt } from './useRerenderAt';
 
 interface CharacterRendererProps {
   resident: Resident;
   scale?: number;
   showName?: boolean;
+  /** Mirar a la izquierda: se voltea SOLO el cuerpo, no el nombre ni los globos. */
+  flip?: boolean;
 }
 
 /** Debe coincidir con la duracion de `.animate-power-shock` en globals.css. */
@@ -19,7 +22,14 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
   resident,
   scale = 1,
   showName = true,
+  flip = false,
 }) => {
+  // Repintar justo cuando acaban el impacto de poder y la celebracion del regalo.
+  useRerenderAt(
+    resident?.powerHit ? (resident.powerHit.at || 0) + POWER_HIT_MS : null,
+    resident?.giftAt ? resident.giftAt + GIFT_CELEBRATION_MS : null
+  );
+
   // Red de seguridad: un residente corrupto no debe tumbar la pagina entera.
   // Este componente se dibuja dozens de veces por frame; si uno falla, React
   // desmonta el arbol y los personajes desaparecen. Se sale con un null.
@@ -102,15 +112,20 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
     animClass += ' animate-pulse';
   }
 
+  // La ESCALA va en un envoltorio y la ANIMACION en el interior. Antes iban en
+  // el mismo div: las animaciones (bounce, shake, wiggle...) animan `transform`
+  // y PISABAN el `scale()` del estilo, asi que el personaje cambiaba de tamano de
+  // golpe al empezar o acabar de andar, bailar o temblar.
   return (
     <div
       data-resident-id={resident.id}
-      className={`relative inline-flex flex-col items-center select-none ${animClass}`}
+      className="relative inline-flex select-none"
       style={{
         transform: `scale(${scale})`,
         transformOrigin: 'bottom center',
       }}
     >
+    <div className={`relative inline-flex flex-col items-center ${animClass}`}>
       {/* AURA DE DONANTE: halo dorado proporcional a los regalos recibidos.
           Es permanente mientras el residente este dentro, asi que quien dono ve
           su aporte reflejado en su personaje mucho despues de la animacion. */}
@@ -242,8 +257,15 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
         </div>
       )}
 
-      {/* 2D Chibi Character SVG */}
-      <div className="relative w-10 h-14 flex items-center justify-center">
+      {/* 2D Chibi Character SVG.
+          El volteo va AQUI y no en un contenedor exterior: antes la habitacion
+          volteaba el personaje entero con scaleX(-1) y el nombre, las insignias
+          y el globo de dialogo se leian en espejo. El giro dura 180 ms para que
+          se vea darse la vuelta en vez de saltar. */}
+      <div
+        className="relative w-10 h-14 flex items-center justify-center transition-transform duration-200 ease-out"
+        style={{ transform: flip ? 'scaleX(-1)' : undefined }}
+      >
         <svg
           viewBox="0 0 40 56"
           className="w-full h-full drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]"
@@ -493,6 +515,7 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
           {displayName}
         </div>
       )}
+    </div>
     </div>
   );
 };
