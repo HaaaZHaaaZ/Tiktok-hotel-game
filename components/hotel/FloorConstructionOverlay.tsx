@@ -50,8 +50,12 @@ export const FloorConstructionOverlay: React.FC<{ floorNumber: number }> = ({ fl
         }
 
         /* 3. Polvo: bocanadas en el borde inferior. */
+        /* 0% en opacity 0: con animation-fill-mode both, el primer fotograma se
+           ve DURANTE el retraso; si empezara visible, el polvo y las chispas
+           aparecerian quietos desde t=0. */
         @keyframes build-dust {
-          0%   { transform: scale(0.3); opacity: 0.8; }
+          0%   { transform: scale(0.3); opacity: 0; }
+          10%  { opacity: 0.8; }
           100% { transform: scale(2); opacity: 0; }
         }
         .build-dust {
@@ -60,7 +64,8 @@ export const FloorConstructionOverlay: React.FC<{ floorNumber: number }> = ({ fl
 
         /* Chispas en las esquinas inferiores. */
         @keyframes build-spark {
-          0%   { transform: translateY(0) scale(1); opacity: 1; }
+          0%   { transform: translateY(0) scale(1); opacity: 0; }
+          10%  { opacity: 1; }
           100% { transform: translateY(-18px) scale(0.3); opacity: 0; }
         }
         .build-spark {

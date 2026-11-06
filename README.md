@@ -1,7 +1,7 @@
 # 🏨 TikTok Hotel — Juego Interactivo para TikTok LIVE
 
 [![Licencia: PolyForm Noncommercial](https://img.shields.io/badge/Licencia-PolyForm%20Noncommercial-orange.svg)](LICENSE)
-[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.11.06--1-green.svg)](CHANGELOG.md)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-2026.11.06--2-green.svg)](CHANGELOG.md)
 
 Hotel virtual 2D en tiempo real que se construye con la audiencia de un directo de
 TikTok. Los espectadores entran comentando, reciben una habitación, suben de piso,

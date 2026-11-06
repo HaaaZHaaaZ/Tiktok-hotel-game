@@ -9,9 +9,12 @@
  * IMPORTANTE: subir APP_VERSION en cada despliegue. Es lo primero que hay que
  * mirar si alguien dice "lo veo igual" o "no me ha cambiado nada".
  */
-export const APP_VERSION = '2026.11.06-1';
+export const APP_VERSION = '2026.11.06-2';
 
 export const APP_VERSION_NOTES = [
+  'animacion: cada accion del personaje con su movimiento (squash & stretch) y emoticonos flotantes',
+  'animacion: demolicion con grietas que se abren, explosion completa, escombros y golpe de los pisos',
+  'animacion: construccion con grua, andamios, polvo, luces y cinta de inauguracion',
   'rendimiento: un like repinta 1 piso en vez del hotel entero (~9x menos trabajo por evento)',
   'fix: el personaje ya no cambia de tamano al andar, bailar o temblar',
   'fix: nombre, insignias y globo ya no salen en espejo al mirar a la izquierda',

@@ -12,6 +12,29 @@ comprobar de un vistazo que lo desplegado es lo que se está probando.
 
 ---
 
+## 2026.11.06-2 — Personajes con peso y pisos que se construyen y se derrumban de verdad
+
+- **Acciones en la habitación.** Cada acción tiene su movimiento, con
+  *squash & stretch*: bailar (balanceo + saltos), celebrar (salto grande),
+  andar (pasos), jugar (inclinado al PC, tecleando), ver la tele (delante de
+  ella, recostado), preocupado (tirita), enfadado (pisotones), broma, llamar a
+  la puerta y respirar en reposo. Antes jugar era un parpadeo (`animate-pulse`).
+  Mira al PC o a la tele según lo que hace. Los emoticonos suben flotando
+  desfasados y las Zzz salen en diagonal; la tele parpadea como una pantalla.
+- **Demolición.** Temblor que va a más, apagón progresivo, grietas que se
+  abren dibujándose, chispas y trozos de techo. Explosión con destello, onda
+  expansiva, bola de fuego, escombros en parábola y polvo. Los pisos de arriba
+  golpean al caer y rebotan.
+  - **Fix:** la explosión se dibujaba dentro del piso que se encoge
+    (`overflow-hidden` + `contain: paint`) y quedaba recortada; ahora va fuera.
+  - El cartel de alerta ya no oscurece todo el piso con un velo y blur.
+- **Construcción.** El piso nuevo baja colgado de la grúa, se balancea y se
+  asienta (`Floor.builtAt`). Alrededor (`FloorConstructionOverlay`, de Hermes):
+  cable y gancho, andamios que se retiran, polvo y chispas al asentarse, luces
+  que se encienden y la cinta «¡PISO N INAUGURADO!».
+
+---
+
 ## 2026.11.06-1 — Más fluido y más vivo
 
 **El problema:** cada like, comentario o sondeo del servidor volvía a pintar
