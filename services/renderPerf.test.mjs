@@ -95,3 +95,14 @@ test('floorPropsEqual: ocupante que vive en otro piso tambien cuenta', () => {
   const s2 = shareUnchanged(s1, c);
   assert.equal(floorPropsEqual(props(s1, 0), props(s2, 0)), false);
 });
+
+test('personalidadPorNombre: estable, variada y sin distinguir mayusculas', async () => {
+  execFileSync('npx', ['tsc', 'services/personalidad.ts', '--module', 'esnext', '--target', 'es2022',
+    '--skipLibCheck', '--outDir', '.tmp-test-pers'], { cwd: ROOT, stdio: 'inherit' });
+  const { personalidadPorNombre, PERSONALIDADES } = await import('../.tmp-test-pers/services/personalidad.js');
+  assert.equal(personalidadPorNombre('laura_dance'), personalidadPorNombre('LAURA_dance'));
+  const vistas = new Set();
+  for (let i = 0; i < 200; i++) vistas.add(personalidadPorNombre(`user_${i}`));
+  assert.ok(vistas.size >= 8, `solo ${vistas.size} personalidades distintas`);
+  for (const p of vistas) assert.ok(PERSONALIDADES.includes(p));
+});

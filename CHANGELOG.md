@@ -12,7 +12,7 @@ comprobar de un vistazo que lo desplegado es lo que se está probando.
 
 ---
 
-## 2026.11.06-1 — Más fluido: el hotel ya no se repinta entero con cada like
+## 2026.11.06-1 — Más fluido y más vivo
 
 **El problema:** cada like, comentario o sondeo del servidor volvía a pintar
 TODOS los pisos, habitaciones y personajes, aunque solo hubiera cambiado uno.
@@ -32,6 +32,10 @@ TODOS los pisos, habitaciones y personajes, aunque solo hubiera cambiado uno.
 - **Animación — paseo.** El personaje cruza la habitación con `translateX`
   (GPU) en 1.6 s en vez de animar `left` (layout) en 0.7 s, y al llegar a su
   habitación aparece con un pequeño salto.
+- **Fix — nadie paseaba.** Quien entraba comentando en el live era siempre
+  `gamer`, y los gamers nunca andan. Ahora la personalidad sale del nombre
+  (`services/personalidad.ts`): variada y estable para el mismo usuario.
+- **Fix — andar de espaldas.** El personaje ahora mira hacia su destino.
 - Los efectos temporales (regalo, impacto de poder) terminan a su hora aunque
   no haya otros eventos (`useRerenderAt`).
 

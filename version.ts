@@ -16,6 +16,8 @@ export const APP_VERSION_NOTES = [
   'fix: el personaje ya no cambia de tamano al andar, bailar o temblar',
   'fix: nombre, insignias y globo ya no salen en espejo al mirar a la izquierda',
   'animacion: paseo por la habitacion fluido (GPU) y llegada con salto',
+  'fix: todos entraban como gamer y nadie paseaba; ahora la personalidad sale del nombre',
+  'fix: el personaje mira hacia donde camina',
   'seguridad: en produccion sin ADMIN_PASSWORD el panel queda bloqueado (antes entraba con la clave publica)',
   'seguridad: sesion firmada con HMAC-SHA256 y comparacion en tiempo constante',
   'refactor: saneador de estado a modulo puro testeable + id de evento centralizado; sin cambio de comportamiento',

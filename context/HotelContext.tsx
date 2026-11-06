@@ -33,6 +33,7 @@ import { hotelSync, HotelSyncStatus } from '../services/hotelSync';
 import { browserReport } from '../services/browserReport';
 import { sanitizeRestoredState, POWER_HIT_MS, GIFT_CELEBRATION_MS } from '../services/sanitizeState';
 import { shareUnchanged } from '../services/structuralShare';
+import { personalidadPorNombre } from '../services/personalidad';
 
 const triggerConfetti = (opts: any = {}) => {
   if (typeof window !== 'undefined') {
@@ -1166,7 +1167,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
   const joinViewer = useCallback((username?: string, personality?: PersonalityType, avatar?: Partial<ResidentAvatar>) => {
     const rawUname = username || `usuario_${Math.floor(100 + Math.random() * 900)}`;
     const uname = rawUname.startsWith('@') ? rawUname.slice(1) : rawUname;
-    const finalPersonality = personality || 'gamer';
+    const finalPersonality = personality || personalidadPorNombre(uname);
     const generatedAvatar = generateRandomAvatar(finalPersonality);
     if (avatar) {
       Object.assign(generatedAvatar, avatar);
@@ -2249,8 +2250,12 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
           }
 
           if (nextAction === 'walking') {
-            direction = direction === 'left' ? 'right' : 'left';
-            coordX = Math.floor(20 + Math.random() * 60);
+            // Mira hacia donde va. Antes la direccion se alternaba sin mirar el
+            // destino, asi que podia cruzar la habitacion andando de espaldas.
+            const destino = Math.floor(20 + Math.random() * 60);
+            const actual = Number(coordX) || 48;
+            if (destino !== actual) direction = destino < actual ? 'left' : 'right';
+            coordX = destino;
           }
         }
 
