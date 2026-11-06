@@ -91,10 +91,13 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
   const isGiftCelebrating = !!resident.giftAt && Date.now() - resident.giftAt < GIFT_CELEBRATION_MS;
 
   // Animation classes based on action and stress
-  let animClass = 'transition-transform duration-300';
+  // Cada accion tiene su propio movimiento (ver "ACCIONES DEL PERSONAJE" en
+  // globals.css). `char-act` ancla las transformaciones a los pies, para que
+  // aplastarse y estirarse se vea como un cuerpo apoyado en el suelo.
+  let animClass = 'char-act';
   if (isGiftCelebrating) {
     // Salto de celebracion: manda durante unos segundos.
-    animClass += ' animate-[bounce_0.5s_infinite]';
+    animClass += ' animate-char-celebrate';
   } else if (isPowerHit) {
     // Temblor violento: manda sobre cualquier otra animacion.
     animClass += ' animate-power-shock';
@@ -102,14 +105,20 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
     animClass += ' animate-[shake_0.25s_ease-in-out_infinite]';
   } else if (isExpiring) {
     animClass += ' animate-[wiggle_0.4s_ease-in-out_infinite]';
-  } else if (currentAction === 'dancing') {
-    animClass += ' animate-bounce';
-  } else if (currentAction === 'celebrating') {
-    animClass += ' animate-[bounce_0.6s_infinite]';
-  } else if (currentAction === 'walking') {
-    animClass += ' animate-[wiggle_0.4s_ease-in-out_infinite]';
-  } else if (currentAction === 'gaming') {
-    animClass += ' animate-pulse';
+  } else {
+    const POR_ACCION: Partial<Record<string, string>> = {
+      dancing: 'animate-char-dance',
+      celebrating: 'animate-char-celebrate',
+      walking: 'animate-char-walk',
+      // Antes era `animate-pulse` (el personaje se desvanecia y volvia).
+      gaming: 'animate-char-gaming',
+      watching_tv: 'animate-char-tv',
+      worried: 'animate-char-worried',
+      angry: 'animate-char-angry',
+      prank: 'animate-char-prank',
+      knocking_door: 'animate-char-knock',
+    };
+    animClass += ' ' + (POR_ACCION[currentAction] || 'animate-char-idle');
   }
 
   // La ESCALA va en un envoltorio y la ANIMACION en el interior. Antes iban en
@@ -207,37 +216,25 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
         {!isStressed && (
           <div className="flex items-center gap-1 text-xs">
             {vipLevel > 0 && <span className="animate-bounce">👑</span>}
-            {currentAction === 'dancing' && (
-              <span className="flex items-center gap-0.5 animate-bounce">
-                <span className="text-pink-400">🎵</span>
-                <span className="text-amber-400">🎶</span>
-                <span className="text-cyan-400">✨</span>
-              </span>
-            )}
-            {currentAction === 'celebrating' && (
-              <span className="flex items-center gap-0.5 animate-ping">
-                <span>🎉</span>
-                <span>✨</span>
-                <span>🥳</span>
-              </span>
-            )}
-            {currentAction === 'gaming' && (
-              <span className="flex items-center gap-0.5 animate-bounce">
-                <span>🎮</span>
-                <span className="text-red-500">🔥</span>
-              </span>
-            )}
+            {/* Los emoticonos suben flotando uno tras otro (desfasados), en vez
+                de botar o parpadear todos a la vez. */}
+            {currentAction === 'dancing' && <Emotes items={['🎵', '🎶', '✨']} />}
+            {currentAction === 'celebrating' && <Emotes items={['🎉', '✨', '🥳']} rapido />}
+            {currentAction === 'gaming' && <Emotes items={['🎮', '🔥']} />}
             {currentAction === 'sleeping' && (
-              <span className="text-indigo-300 font-bold text-[9px] animate-pulse">
-                💤 Zzz...
+              <span className="relative flex items-end text-indigo-300 font-black text-[9px] h-3 w-6">
+                {['z', 'z', 'Z'].map((z, i) => (
+                  <span
+                    key={i}
+                    className="absolute bottom-0 animate-emote-zzz"
+                    style={{ left: `${i * 5}px`, animationDelay: `${i * 0.8}s`, fontSize: `${7 + i * 2}px` }}
+                  >
+                    {z}
+                  </span>
+                ))}
               </span>
             )}
-            {currentAction === 'watching_tv' && (
-              <span className="flex items-center gap-0.5 animate-pulse">
-                <span>🍿</span>
-                <span>📺</span>
-              </span>
-            )}
+            {currentAction === 'watching_tv' && <Emotes items={['🍿', '📺']} />}
           </div>
         )}
       </div>
@@ -522,3 +519,31 @@ const CharacterRendererBase: React.FC<CharacterRendererProps> = ({
 
 /** Memoizado: solo se repinta si cambian sus props (el estado es inmutable). */
 export const CharacterRenderer = React.memo(CharacterRendererBase);
+
+/**
+ * Emoticonos de accion que suben flotando, uno tras otro.
+ * Solo CSS (retardos por elemento): ningun temporizador de JS por personaje.
+ */
+const Emotes: React.FC<{ items: string[]; rapido?: boolean }> = ({ items, rapido }) => {
+  const dur = rapido ? 1.1 : 1.8;
+  return (
+    <span className="relative flex items-end h-4" style={{ width: `${items.length * 12}px` }}>
+      {items.map((e, i) => (
+        <span
+          key={i}
+          className="absolute bottom-0 animate-emote-float"
+          style={
+            {
+              left: `${i * 11}px`,
+              animationDuration: `${dur}s`,
+              animationDelay: `${(i * dur) / items.length}s`,
+              '--emote-dx': `${i % 2 === 0 ? -3 : 3}px`,
+            } as React.CSSProperties
+          }
+        >
+          {e}
+        </span>
+      ))}
+    </span>
+  );
+};

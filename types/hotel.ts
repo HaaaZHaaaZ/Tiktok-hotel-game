@@ -293,6 +293,8 @@ export interface Floor {
   rooms: string[]; // room IDs
   status: 'active' | 'destroying' | 'creating';
   isDestroyable: boolean;
+  /** Cuando se construyo (ms epoch): dispara la animacion de obra. */
+  builtAt?: number;
 }
 
 export type GlobalEventType =

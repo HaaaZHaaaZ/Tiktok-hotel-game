@@ -98,6 +98,11 @@ const RoomRendererBase: React.FC<RoomRendererProps> = ({
   // Compute character X position across the open room floor (no dividing bars)
   let targetXPercent = resident?.coordX || 48;
   if (isGaming) targetXPercent = 26; // Sitting right by the PC desk
+  if (isWatchingTv) targetXPercent = 64; // Delante de la tele (pared derecha)
+
+  // Hacia donde mira: al PC (izquierda) si juega, a la tele (derecha) si la ve;
+  // si no, hacia donde camina.
+  const mirandoIzquierda = isGaming ? true : isWatchingTv ? false : resident?.direction === 'left';
 
   return (
     <div
@@ -291,7 +296,7 @@ const RoomRendererBase: React.FC<RoomRendererProps> = ({
         {/* Wall TV */}
         <div className="w-7 h-5 bg-slate-900 rounded-xs border border-slate-600 flex items-center justify-center overflow-hidden shadow-xs shrink-0">
           {isWatchingTv ? (
-            <div className="w-full h-full bg-cyan-400 animate-pulse flex items-center justify-center text-[6px] text-black font-black">
+            <div className="w-full h-full bg-cyan-400 animate-tv-flicker flex items-center justify-center text-[6px] text-black font-black">
               LIVE
             </div>
           ) : (
@@ -396,7 +401,7 @@ const RoomRendererBase: React.FC<RoomRendererProps> = ({
                       resident={resident}
                       scale={0.84}
                       showName={true}
-                      flip={resident.direction === 'left'}
+                      flip={mirandoIzquierda}
                     />
                   </div>
                 </div>

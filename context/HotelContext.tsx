@@ -769,6 +769,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode; modo?: ModoHot
       rooms: roomIds,
       status: 'active',
       isDestroyable: true,
+      builtAt: Date.now(),
     };
 
     setState((prev) => ({

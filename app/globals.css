@@ -397,3 +397,271 @@
 .animate-char-arrive {
   animation: char-arrive 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+
+/* ------------------------------------------------------------
+   ACCIONES DEL PERSONAJE (dentro de su habitacion)
+   Cada accion tiene su propio movimiento, con "squash & stretch"
+   (aplastar al caer, estirar al subir) para que se lea como un
+   cuerpo con peso. Todo con transform, anclado a los pies.
+   ------------------------------------------------------------ */
+.char-act { transform-origin: 50% 100%; }
+
+/* Quieto: respira. */
+@keyframes char-idle {
+  0%, 100% { transform: scale(1, 1); }
+  50%      { transform: scale(1.025, 0.975); }
+}
+.animate-char-idle { animation: char-idle 2.8s ease-in-out infinite; }
+
+/* Bailando: balanceo lateral con salto en cada tiempo. */
+@keyframes char-dance {
+  0%   { transform: translateY(0) rotate(-9deg) scale(1.04, 0.96); }
+  25%  { transform: translateY(-6px) rotate(0deg) scale(0.97, 1.04); }
+  50%  { transform: translateY(0) rotate(9deg) scale(1.04, 0.96); }
+  75%  { transform: translateY(-6px) rotate(0deg) scale(0.97, 1.04); }
+  100% { transform: translateY(0) rotate(-9deg) scale(1.04, 0.96); }
+}
+.animate-char-dance { animation: char-dance 0.9s ease-in-out infinite; }
+
+/* Celebrando: salto grande con aplastamiento al despegar y al caer. */
+@keyframes char-celebrate {
+  0%   { transform: translateY(0) scale(1.14, 0.86); }
+  25%  { transform: translateY(-14px) scale(0.9, 1.12); }
+  50%  { transform: translateY(-17px) scale(1, 1) rotate(6deg); }
+  75%  { transform: translateY(0) scale(1.16, 0.84); }
+  100% { transform: translateY(0) scale(1.14, 0.86); }
+}
+.animate-char-celebrate { animation: char-celebrate 0.75s cubic-bezier(0.33, 0, 0.67, 1) infinite; }
+
+/* Andando: bamboleo de pasos (un rebote por paso). */
+@keyframes char-walk {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  25%      { transform: translateY(-2.5px) rotate(0deg); }
+  50%      { transform: translateY(0) rotate(3deg); }
+  75%      { transform: translateY(-2.5px) rotate(0deg); }
+}
+.animate-char-walk { animation: char-walk 0.55s linear infinite; }
+
+/* Jugando: inclinado hacia el PC, tecleando a toda velocidad. */
+@keyframes char-gaming {
+  0%, 100% { transform: rotate(-5deg) translate(0, 0); }
+  25%      { transform: rotate(-5deg) translate(-0.6px, 0.8px); }
+  50%      { transform: rotate(-6deg) translate(0.5px, 0); }
+  75%      { transform: rotate(-5deg) translate(0, 0.8px); }
+}
+.animate-char-gaming { animation: char-gaming 0.28s steps(2, end) infinite; }
+
+/* Viendo la tele: recostado, balanceo lento. */
+@keyframes char-tv {
+  0%, 100% { transform: rotate(-2deg) scale(1, 1); }
+  50%      { transform: rotate(2deg) scale(1.015, 0.985); }
+}
+.animate-char-tv { animation: char-tv 3.4s ease-in-out infinite; }
+
+/* Preocupado: tirita. */
+@keyframes char-worried {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-1.2px) rotate(-1deg); }
+  75%      { transform: translateX(1.2px) rotate(1deg); }
+}
+.animate-char-worried { animation: char-worried 0.16s linear infinite; }
+
+/* Enfadado: pisotones. */
+@keyframes char-angry {
+  0%, 100% { transform: translateY(0) scale(1.08, 0.92); }
+  40%      { transform: translateY(-4px) scale(0.96, 1.05) rotate(-3deg); }
+  60%      { transform: translateY(-4px) scale(0.96, 1.05) rotate(3deg); }
+}
+.animate-char-angry { animation: char-angry 0.5s ease-in infinite; }
+
+/* Broma: se mueve a hurtadillas de un lado a otro. */
+@keyframes char-prank {
+  0%, 100% { transform: translateX(-4px) rotate(-6deg) scale(1, 0.94); }
+  50%      { transform: translateX(4px) rotate(6deg) scale(1, 0.94); }
+}
+.animate-char-prank { animation: char-prank 0.7s ease-in-out infinite; }
+
+/* Llamando a la puerta: golpecitos hacia delante. */
+@keyframes char-knock {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  20%, 40%      { transform: rotate(7deg); }
+}
+.animate-char-knock { animation: char-knock 0.6s ease-in-out infinite; }
+
+/* Emoticonos de accion: suben flotando y se desvanecen, uno tras otro. */
+@keyframes emote-float {
+  0%   { transform: translate(0, 4px) scale(0.6); opacity: 0; }
+  20%  { transform: translate(var(--emote-dx, 0px), -2px) scale(1.05); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translate(calc(var(--emote-dx, 0px) * 2), -16px) scale(0.9); opacity: 0; }
+}
+.animate-emote-float { animation: emote-float 1.8s ease-out infinite both; }
+
+/* Zzz: cada zeta sube en diagonal y crece. */
+@keyframes emote-zzz {
+  0%   { transform: translate(0, 0) scale(0.5); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translate(8px, -14px) scale(1.2); opacity: 0; }
+}
+.animate-emote-zzz { animation: emote-zzz 2.4s ease-out infinite both; }
+
+/* Pantalla de la tele encendida: parpadeo irregular de imagen, no un fundido. */
+@keyframes tv-flicker {
+  0%, 100% { opacity: 1; }
+  12% { opacity: 0.78; }
+  20% { opacity: 0.95; }
+  41% { opacity: 0.7; }
+  47% { opacity: 1; }
+  73% { opacity: 0.85; }
+}
+.animate-tv-flicker { animation: tv-flicker 1.3s steps(1, end) infinite; }
+
+/* ============================================================
+   PISOS: DEMOLICION
+   Fase 1 (2.2 s): temblor que crece, apagon, grietas que se abren.
+   Fase 2 (1.2 s): destello, onda, bola de fuego, escombros, polvo.
+   Fase 3 (0.9 s): los pisos de arriba caen y golpean.
+   ============================================================ */
+
+/* Temblor que va a mas durante los 2.2 s de la fase de grietas. */
+@keyframes floor-tremor {
+  0%   { transform: translate(0, 0); }
+  10%  { transform: translate(-1px, 0); }
+  20%  { transform: translate(1px, 0); }
+  35%  { transform: translate(-2px, 1px) rotate(-0.2deg); }
+  45%  { transform: translate(2px, 0) rotate(0.2deg); }
+  60%  { transform: translate(-3px, 1px) rotate(-0.4deg); }
+  70%  { transform: translate(3px, -1px) rotate(0.4deg); }
+  82%  { transform: translate(-4px, 1px) rotate(-0.6deg); }
+  91%  { transform: translate(4px, 0) rotate(0.6deg); }
+  100% { transform: translate(-5px, 2px) rotate(-0.8deg); }
+}
+.animate-floor-tremor { animation: floor-tremor 2.2s linear forwards; }
+
+/* La luz se va: de 0 a 55% de negro, con cortes. */
+@keyframes blackout {
+  0%   { opacity: 0; }
+  30%  { opacity: 0.25; }
+  34%  { opacity: 0.05; }
+  60%  { opacity: 0.4; }
+  63%  { opacity: 0.1; }
+  100% { opacity: 0.55; }
+}
+.animate-blackout { animation: blackout 2.2s steps(20, end) forwards; }
+
+/* Grieta que se abre de punta a punta (pathLength=1). */
+@keyframes crack-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+.animate-crack-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: crack-draw 0.9s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+/* Chispazo: aparece, crece y se apaga, a rafagas. */
+@keyframes spark {
+  0%, 40%, 100% { transform: scale(0.4) rotate(0deg); opacity: 0; }
+  8%            { transform: scale(1.3) rotate(-12deg); opacity: 1; }
+  18%           { transform: scale(0.9) rotate(10deg); opacity: 0.9; }
+}
+.animate-spark { animation: spark 0.9s ease-out infinite; }
+
+/* Trozo de techo que se desprende y cae. */
+@keyframes crumb {
+  0%   { transform: translateY(-4px) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translateY(150px) rotate(220deg); opacity: 0.2; }
+}
+.animate-crumb { animation: crumb 0.9s cubic-bezier(0.55, 0, 1, 0.45) infinite both; }
+
+/* Cartel de alerta: entra de golpe con rebote y luego late. */
+@keyframes alert-pop {
+  0%   { transform: scale(0.2); opacity: 0; }
+  14%  { transform: scale(1.15); opacity: 1; }
+  22%  { transform: scale(0.95); }
+  30%  { transform: scale(1); }
+  65%  { transform: scale(1); }
+  72%  { transform: scale(1.06); }
+  80%  { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+.animate-alert-pop { animation: alert-pop 2.2s ease-out forwards; }
+
+/* Destello blanco de la explosion. */
+@keyframes blast-flash {
+  0%   { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+.animate-blast-flash { animation: blast-flash 0.35s ease-out forwards; }
+
+/* Onda expansiva: anillo que crece y se desvanece. */
+@keyframes shockwave {
+  0%   { transform: scale(0.2); opacity: 1; }
+  100% { transform: scale(5); opacity: 0; }
+}
+.animate-shockwave { animation: shockwave 0.7s cubic-bezier(0.1, 0.6, 0.3, 1) forwards; }
+
+/* Bola de fuego: se hincha y se consume (sin blur animado). */
+@keyframes fireball {
+  0%   { transform: scale(0.1); opacity: 1; }
+  35%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.animate-fireball { animation: fireball 0.9s ease-out forwards; }
+
+@keyframes blast-emoji {
+  0%   { transform: scale(0.3) rotate(-20deg); opacity: 0; }
+  20%  { transform: scale(1.6) rotate(8deg); opacity: 1; }
+  100% { transform: scale(1.1) rotate(0deg); opacity: 0; }
+}
+.animate-blast-emoji { animation: blast-emoji 0.9s ease-out forwards; }
+
+/* Escombro en parabola: sube (--up), sale hacia un lado (--dx) y cae (--dy)
+   girando (--rot). Dos tramos con curvas distintas = gravedad. */
+@keyframes debris {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(0.6); opacity: 0; }
+  8%   { opacity: 1; }
+  40%  {
+    transform: translate(calc(var(--dx) * 0.55), calc(var(--up) * -1)) rotate(calc(var(--rot) * 0.4)) scale(1);
+    animation-timing-function: cubic-bezier(0.5, 0, 1, 1);
+  }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.9); opacity: 0; }
+}
+.animate-debris { animation: debris 1.15s cubic-bezier(0.2, 0.7, 0.4, 1) both; }
+
+/* Bocanada de polvo. */
+@keyframes dust-puff {
+  0%   { transform: translateY(4px) scale(0.3); opacity: 0; }
+  25%  { opacity: 0.85; }
+  100% { transform: translateY(-14px) scale(2); opacity: 0; }
+}
+.animate-dust-puff { animation: dust-puff 0.9s ease-out both; }
+
+/* Pisos de arriba: caen con el hueco (layout) y, al final, el golpe:
+   se aplastan, rebotan y se asientan. Sincronizado con el "slam" (~0.9 s). */
+@keyframes floor-slam {
+  0%, 62% { transform: translateY(0) scale(1, 1); }
+  70%     { transform: translateY(6px) scale(1.01, 0.96); }
+  80%     { transform: translateY(-3px) scale(0.995, 1.015); }
+  90%     { transform: translateY(1px) scale(1, 0.995); }
+  100%    { transform: translateY(0) scale(1, 1); }
+}
+.animate-floor-slam { animation: floor-slam 1.5s ease-out both; transform-origin: 50% 100%; }
+
+/* ============================================================
+   PISOS: CONSTRUCCION
+   El piso nuevo baja colgado de la grua, se balancea y se asienta.
+   Los andamios, la grua y la cinta van en FloorConstructionOverlay.
+   ============================================================ */
+@keyframes floor-build {
+  0%   { transform: translateY(-140%) rotate(-1.5deg); opacity: 0; }
+  12%  { opacity: 1; }
+  45%  { transform: translateY(-6%) rotate(1deg); }
+  55%  { transform: translateY(2%) rotate(-0.4deg) scale(1.01, 0.97); }
+  65%  { transform: translateY(-1%) rotate(0.2deg) scale(1, 1.01); }
+  75%  { transform: translateY(0) rotate(0deg) scale(1, 1); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-floor-build { animation: floor-build 1.6s cubic-bezier(0.3, 0.6, 0.4, 1) both; transform-origin: 50% 100%; }

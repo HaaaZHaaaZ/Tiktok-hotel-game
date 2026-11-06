@@ -6,6 +6,8 @@ import { RoomRenderer } from './RoomRenderer';
 import { ElevatorRenderer } from './ElevatorRenderer';
 import { CharacterRenderer } from './CharacterRenderer';
 import { floorPropsEqual, type FloorPropsLike } from '../../services/floorEquality';
+import { FloorConstructionOverlay, CONSTRUCCION_MS } from './FloorConstructionOverlay';
+import { useRerenderAt } from './useRerenderAt';
 
 interface FloorRendererProps {
   floor: Floor;
@@ -58,12 +60,30 @@ const FloorRendererBase: React.FC<FloorRendererProps> = ({
     isThisFloorDemolishing &&
     (demolitionState?.phase === 'exploding_bricks' || demolitionState?.phase === 'upper_floors_falling');
 
+  // Piso recien construido: animacion de obra durante CONSTRUCCION_MS.
+  const builtAt = typeof floor.builtAt === 'number' ? floor.builtAt : 0;
+  useRerenderAt(builtAt ? builtAt + CONSTRUCCION_MS : null);
+  const enConstruccion = !!builtAt && Date.now() - builtAt < CONSTRUCCION_MS;
+
   const isThisFloorFalling =
     demolitionState?.isDemolishing &&
     demolitionState.affectedUpperFloors.includes(floor.floorNumber) &&
     demolitionState.phase === 'upper_floors_falling';
 
+  // Escombros que salen volando: se generan una vez (posiciones fijas por
+  // indice) para que no cambien en cada render.
+  const escombros = ESCOMBROS;
+
   return (
+    // Envoltorio EXTERIOR sin recorte. El piso que se derrumba (interior) tiene
+    // `overflow-hidden` y `contain: paint`, asi que cualquier efecto dibujado
+    // DENTRO quedaba recortado mientras el piso se encogia: la explosion apenas
+    // se veia. Los efectos grandes (explosion, polvo, construccion) van aqui.
+    <div
+      className={`relative w-full ${isThisFloorFalling ? 'animate-floor-slam' : ''} ${
+        enConstruccion ? 'animate-floor-build z-30' : ''
+      }`}
+    >
     <div
       // `transition-[max-height,opacity,transform]` en vez de `transition-all`:
       // `all` obligaba al navegador a vigilar TODAS las propiedades del subarbol
@@ -75,7 +95,7 @@ const FloorRendererBase: React.FC<FloorRendererProps> = ({
           ? 'max-h-0 py-0 opacity-0 border-y-0 overflow-hidden scale-95'
           : 'max-h-[350px] p-2'
       } ${
-        isCrackingAndFlickering ? 'animate-shake shadow-[0_0_30px_rgba(239,68,68,0.9)]' : ''
+        isCrackingAndFlickering ? 'animate-floor-tremor shadow-[0_0_30px_rgba(239,68,68,0.9)]' : ''
       }`}
       /* `contain: paint` aisla el repintado del piso: cuando su altura cambia,
          el navegador no necesita recalcular los pisos vecinos. `will-change`
@@ -92,26 +112,56 @@ const FloorRendererBase: React.FC<FloorRendererProps> = ({
         <div className="absolute inset-0 z-50 pointer-events-none overflow-hidden rounded">
           {/* Electrical power outage strobe light flashes */}
           <div className="absolute inset-0 bg-yellow-400/35 mix-blend-color-dodge animate-flicker" />
-          <div className="absolute inset-0 bg-black/60 animate-pulse" />
+          {/* Apagon progresivo: la luz se va yendo mientras crecen las grietas. */}
+          <div className="absolute inset-0 bg-black animate-blackout" />
 
-          {/* Red jagged structural crack lines */}
-          <svg className="absolute inset-0 w-full h-full stroke-red-500 stroke-2 fill-none drop-shadow-[0_0_8px_#FF0000]">
-            <polyline points="20,0 60,35 50,65 90,95 80,130 130,170" />
-            <polyline points="180,0 160,40 190,75 170,110 210,160" />
-            <polyline points="320,0 300,45 330,80 310,120 350,170" />
-            <polyline points="450,15 410,50 430,90 380,125 400,170" />
-            <polyline points="0,90 80,105 160,85 240,100 360,90 480,100" />
+          {/* Grietas que SE ABREN: cada una se dibuja de punta a punta
+              (pathLength=1 + stroke-dashoffset), escalonadas. Antes eran
+              lineas fijas que aparecian de golpe. */}
+          <svg
+            viewBox="0 0 480 170"
+            preserveAspectRatio="none"
+            className="absolute inset-0 w-full h-full stroke-red-500 fill-none drop-shadow-[0_0_6px_#FF0000]"
+          >
+            {[
+              '20,0 60,35 50,65 90,95 80,130 130,170',
+              '180,0 160,40 190,75 170,110 210,160',
+              '320,0 300,45 330,80 310,120 350,170',
+              '450,15 410,50 430,90 380,125 400,170',
+              '0,90 80,105 160,85 240,100 360,90 480,100',
+            ].map((pts, i) => (
+              <polyline
+                key={i}
+                points={pts}
+                pathLength={1}
+                strokeWidth={2.5}
+                vectorEffect="non-scaling-stroke"
+                className="animate-crack-draw"
+                style={{ animationDelay: `${i * 0.28}s` }}
+              />
+            ))}
           </svg>
 
-          {/* Sparks & falling debris */}
-          <div className="absolute top-2 left-8 text-xl animate-bounce">⚡</div>
-          <div className="absolute top-4 right-12 text-lg animate-ping">💥</div>
-          <div className="absolute top-1/2 left-1/3 text-xl animate-bounce">⚡</div>
-          <div className="absolute bottom-4 right-1/4 text-sm animate-pulse">🪨</div>
+          {/* Chispas en los cables cortados */}
+          <div className="absolute top-2 left-8 text-xl animate-spark">⚡</div>
+          <div className="absolute top-1/2 left-1/3 text-xl animate-spark" style={{ animationDelay: '0.45s' }}>⚡</div>
+          <div className="absolute top-3 right-14 text-lg animate-spark" style={{ animationDelay: '0.8s' }}>⚡</div>
 
-          {/* Warning Banner */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/65 backdrop-blur-xs p-2 text-center">
-            <div className="bg-red-600 text-white font-black text-xs px-3 py-1.5 rounded-lg border-2 border-yellow-300 shadow-2xl animate-bounce flex items-center gap-1.5">
+          {/* Se desprenden trozos del techo */}
+          {[12, 30, 47, 66, 84].map((x, i) => (
+            <div
+              key={x}
+              className="absolute top-0 text-[9px] animate-crumb"
+              style={{ left: `${x}%`, animationDelay: `${0.3 + i * 0.32}s` }}
+            >
+              🪨
+            </div>
+          ))}
+
+          {/* Cartel de aviso: entra de golpe y se queda. Ya no oscurece todo el
+              piso con un velo + blur, que tapaba las grietas. */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
+            <div className="bg-red-600 text-white font-black text-xs px-3 py-1.5 rounded-lg border-2 border-yellow-300 shadow-2xl animate-alert-pop flex items-center gap-1.5">
               <span>🚨</span>
               <span>¡FALLO ELÉCTRICO & DEMOLICIÓN EN CURSO!</span>
               <span>🚨</span>
@@ -120,29 +170,6 @@ const FloorRendererBase: React.FC<FloorRendererProps> = ({
               Desmantelando Piso {floor.floorNumber}...
             </div>
           </div>
-        </div>
-      )}
-
-      {/* 2. Spectacular Explosion into Falling Coal & Rock Debris */}
-      {isExplodingBricks && (
-        <div className="absolute inset-0 z-50 pointer-events-none overflow-visible flex items-center justify-center">
-          {/* Central fireball flash */}
-          <div className="w-48 h-48 rounded-full bg-gradient-to-r from-yellow-300 via-orange-500 to-red-600 blur-md animate-ping" />
-          <div className="text-4xl animate-bounce absolute">💥</div>
-
-          {/* Falling Coal & Rock Particles Dropping Downward */}
-          <div className="absolute top-0 text-2xl animate-coal-1">🪨</div>
-          <div className="absolute top-0 text-2xl animate-coal-2">⚫</div>
-          <div className="absolute top-0 text-xl animate-coal-3">💩</div>
-          <div className="absolute top-0 text-2xl animate-coal-4">🌑</div>
-
-          <div className="absolute top-0 text-lg animate-coal-1">🪨</div>
-          <div className="absolute top-0 text-lg animate-coal-2">⚫</div>
-          <div className="absolute top-0 text-xl animate-coal-3">💩</div>
-          <div className="absolute top-0 text-lg animate-coal-4">🌑</div>
-
-          <div className="absolute top-0 text-2xl animate-coal-2">💥</div>
-          <div className="absolute top-0 text-2xl animate-coal-3">🪨</div>
         </div>
       )}
 
@@ -231,8 +258,79 @@ const FloorRendererBase: React.FC<FloorRendererProps> = ({
         })}
       </div>
     </div>
+
+      {/* EXPLOSION: fuera del piso que se encoge, para que se vea entera.
+          Destello -> onda expansiva -> bola de fuego -> escombros en parabola
+          -> nube de polvo. Todo transform/opacity. */}
+      {isExplodingBricks && (
+        <div className="absolute inset-0 z-50 pointer-events-none overflow-visible flex items-center justify-center">
+          <div className="absolute inset-0 bg-white animate-blast-flash rounded" />
+          <div className="absolute w-24 h-24 rounded-full border-4 border-amber-200 animate-shockwave" />
+          <div
+            className="absolute w-40 h-40 rounded-full animate-fireball"
+            style={{ background: 'radial-gradient(circle, #FEF08A 0%, #F97316 40%, #DC2626 65%, transparent 72%)' }}
+          />
+          <div className="absolute text-4xl animate-blast-emoji">💥</div>
+          {escombros.map((e, i) => (
+            <div
+              key={i}
+              className="absolute animate-debris"
+              style={
+                {
+                  fontSize: `${e.size}px`,
+                  animationDelay: `${e.delay}s`,
+                  '--dx': `${e.dx}px`,
+                  '--up': `${e.up}px`,
+                  '--dy': `${e.dy}px`,
+                  '--rot': `${e.rot}deg`,
+                } as React.CSSProperties
+              }
+            >
+              {e.emoji}
+            </div>
+          ))}
+          {[-38, -14, 10, 34].map((x, i) => (
+            <div
+              key={x}
+              className="absolute bottom-0 w-16 h-10 rounded-full bg-stone-400/70 animate-dust-puff"
+              style={{ left: `calc(50% + ${x}% - 2rem)`, animationDelay: `${0.25 + i * 0.07}s` }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Golpe de los pisos superiores al caer sobre el hueco: polvo en la base. */}
+      {isThisFloorFalling && (
+        <div className="absolute inset-x-0 -bottom-2 h-6 z-40 pointer-events-none flex justify-around">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="w-10 h-6 rounded-full bg-stone-300/60 animate-dust-puff"
+              style={{ animationDelay: `${0.62 + (i % 2) * 0.06}s` }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* CONSTRUCCION de un piso nuevo (andamios, grua, cinta...). */}
+      {enConstruccion && <FloorConstructionOverlay floorNumber={floor.floorNumber} />}
+    </div>
   );
 };
+
+/** Escombros de la explosion: emoji, tamano y trayectoria (parabola). */
+const ESCOMBROS = [
+  { emoji: '🪨', dx: -150, up: 70, dy: 120, rot: -260, size: 22, delay: 0.05 },
+  { emoji: '⚫', dx: -95, up: 95, dy: 150, rot: 320, size: 18, delay: 0.1 },
+  { emoji: '🌑', dx: -40, up: 110, dy: 170, rot: -200, size: 20, delay: 0 },
+  { emoji: '🪨', dx: 30, up: 105, dy: 160, rot: 280, size: 16, delay: 0.08 },
+  { emoji: '💩', dx: 90, up: 85, dy: 140, rot: -340, size: 18, delay: 0.12 },
+  { emoji: '⚫', dx: 150, up: 65, dy: 125, rot: 240, size: 20, delay: 0.04 },
+  { emoji: '🪨', dx: -170, up: 30, dy: 90, rot: 180, size: 14, delay: 0.15 },
+  { emoji: '🌑', dx: 175, up: 35, dy: 95, rot: -180, size: 14, delay: 0.18 },
+  { emoji: '🪨', dx: -60, up: 45, dy: 110, rot: 150, size: 12, delay: 0.2 },
+  { emoji: '⚫', dx: 65, up: 50, dy: 115, rot: -150, size: 12, delay: 0.22 },
+];
 
 /**
  * Memoizado con un comparador propio: el piso recibe `rooms` y `residents` del
